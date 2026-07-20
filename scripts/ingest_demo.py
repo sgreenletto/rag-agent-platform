@@ -3,6 +3,7 @@
 import sys
 from argparse import ArgumentParser, Namespace
 
+from rag_agent_platform.ingestion.chunker import ChunkingConfig, ParentChildChunker
 from rag_agent_platform.ingestion.cleaner import TextCleaner
 from rag_agent_platform.ingestion.loaders import build_default_loader_registry
 from rag_agent_platform.ingestion.pipeline import RealIngestionPipeline
@@ -51,7 +52,27 @@ def run(args: Namespace) -> None:
         return
     if args.file_path:
         loaded = build_default_loader_registry().load(args.file_path)
-        content = TextCleaner().clean(loaded.content) if args.show_clean else loaded.content
+        should_clean = args.show_clean or args.show_chunks
+        content = TextCleaner().clean(loaded.content) if should_clean else loaded.content
+        if args.show_chunks:
+            chunker = ParentChildChunker(
+                ChunkingConfig(parent_chunk_size=80, child_chunk_size=32, child_overlap=8)
+            )
+            parents, children = chunker.split(
+                document_id="demo-document",
+                content=content,
+                source=loaded.metadata["filename"],
+                file_type=loaded.metadata["file_type"],
+            )
+            print(f"filename: {loaded.metadata['filename']}")
+            print(f"parent_chunks: {len(parents)}")
+            print(f"child_chunks: {len(children)}")
+            if children:
+                first_child = children[0]
+                print(f"first_child_id: {first_child.chunk_id}")
+                print(f"first_child_parent_id: {first_child.parent_id}")
+                print(f"first_child_preview: {first_child.content[:80]}")
+            return
         preview = content.strip().replace("\n", " ")[:80]
         print(f"filename: {loaded.metadata['filename']}")
         print(f"file_type: {loaded.metadata['file_type']}")
