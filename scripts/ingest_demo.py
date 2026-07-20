@@ -4,11 +4,13 @@ import sys
 from argparse import ArgumentParser, Namespace
 from tempfile import TemporaryDirectory
 
+from rag_agent_platform.embeddings import HashEmbeddingModel
 from rag_agent_platform.ingestion.chunker import ChunkingConfig, ParentChildChunker
 from rag_agent_platform.ingestion.cleaner import TextCleaner
 from rag_agent_platform.ingestion.loaders import build_default_loader_registry
 from rag_agent_platform.ingestion.pipeline import RealIngestionPipeline
 from rag_agent_platform.models import ChildChunk, DocumentRecord, ParentChunk
+from rag_agent_platform.storage.chroma_store import ChromaVectorStore
 from rag_agent_platform.storage.file_repository import FileDocumentRepository
 
 
@@ -60,6 +62,13 @@ def run(args: Namespace) -> None:
         loaded = build_default_loader_registry().load(args.file_path)
         should_clean = args.show_clean or args.show_chunks
         content = TextCleaner().clean(loaded.content) if should_clean else loaded.content
+        if args.index:
+            run_chroma_smoke(
+                content=content,
+                filename=loaded.metadata["filename"],
+                file_type=loaded.metadata["file_type"],
+            )
+            return
         if args.show_chunks:
             chunker = ParentChildChunker(
                 ChunkingConfig(parent_chunk_size=80, child_chunk_size=32, child_overlap=8)
@@ -90,7 +99,7 @@ def run(args: Namespace) -> None:
             print(f"characters: {len(loaded.content)}")
         print(f"preview: {preview}")
         return
-    if args.show_clean or args.show_chunks or args.index:
+    if args.show_clean or args.show_chunks:
         print("selected smoke option is reserved for a later implementation step")
         return
     print("ingestion demo is ready; use --help to see available commands")
@@ -132,6 +141,32 @@ def run_repository_smoke() -> None:
         reloaded.delete_document(document.document_id)
         print(f"documents_after_delete: {len(reloaded.list_documents())}")
         print(f"child_chunks_after_delete: {len(reloaded.list_child_chunks())}")
+
+
+def run_chroma_smoke(*, content: str, filename: str, file_type: str) -> None:
+    """Run a minimal Chroma vector store check."""
+    with TemporaryDirectory(ignore_cleanup_errors=True) as temp_dir:
+        chunker = ParentChildChunker(
+            ChunkingConfig(parent_chunk_size=120, child_chunk_size=48, child_overlap=12)
+        )
+        _, children = chunker.split(
+            document_id="demo-document",
+            content=content,
+            source=filename,
+            file_type=file_type,
+        )
+        vector_store = ChromaVectorStore(
+            persist_directory=temp_dir,
+            collection_name="demo_child_chunks",
+            embedding_model=HashEmbeddingModel(dimensions=16),
+        )
+        vector_store.upsert_child_chunks(children)
+        print(f"filename: {filename}")
+        print(f"indexed_child_chunks: {len(children)}")
+        print(f"collection_count_after_upsert: {vector_store.count()}")
+        print(f"document_count_after_upsert: {vector_store.count('demo-document')}")
+        vector_store.delete_document("demo-document")
+        print(f"document_count_after_delete: {vector_store.count('demo-document')}")
 
 
 if __name__ == "__main__":
