@@ -51,7 +51,7 @@ def main() -> None:
 
 def run(args: Namespace) -> None:
     """Dispatch the selected smoke action."""
-    pipeline = RealIngestionPipeline()
+    pipeline = build_real_pipeline()
     if args.repo_smoke:
         run_repository_smoke()
         return
@@ -64,6 +64,15 @@ def run(args: Namespace) -> None:
         print(f"deleted document: {args.delete}")
         return
     if args.file_path:
+        if not any([args.show_clean, args.show_chunks, args.index, args.adapter_smoke]):
+            result = pipeline.ingest(args.file_path)
+            print(f"document_id: {result.document.document_id}")
+            print(f"filename: {result.document.filename}")
+            print(f"parent_chunks: {result.parent_chunk_count}")
+            print(f"child_chunks: {result.child_chunk_count}")
+            print(f"documents: {len(pipeline.list_documents())}")
+            print(f"vectors: {pipeline.count_vectors(result.document.document_id)}")
+            return
         loaded = build_default_loader_registry().load(args.file_path)
         should_clean = args.show_clean or args.show_chunks
         content = TextCleaner().clean(loaded.content) if should_clean else loaded.content
@@ -217,6 +226,17 @@ def run_adapter_smoke(*, content: str, filename: str, file_type: str) -> None:
             print(f"first_hit_document_id: {first_hit.chunk.document_id}")
             print(f"first_hit_parent_id: {first_hit.chunk.parent_id}")
             print(f"first_hit_source: {first_hit.source}")
+
+
+def build_real_pipeline() -> RealIngestionPipeline:
+    """Build the default local ingestion pipeline used by this demo."""
+    return RealIngestionPipeline(
+        vector_store=ChromaVectorStore(
+            persist_directory="data/chroma",
+            collection_name="rag_child_chunks",
+            embedding_model=HashEmbeddingModel(dimensions=16),
+        )
+    )
 
 
 if __name__ == "__main__":

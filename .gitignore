@@ -21,6 +21,7 @@ Thumbs.db
 # Runtime data
 data/uploads/*
 !data/uploads/.gitkeep
+data/metadata/*
 data/chroma/*
 !data/chroma/.gitkeep
 data/graph/*
