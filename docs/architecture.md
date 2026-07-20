@@ -1,61 +1,65 @@
 # 项目架构
 
-项目采用标准 src-layout，正式包为 `rag_agent_platform`。根 `app.py` 只调用
-`rag_agent_platform.ui.app.run_app()`，页面组件与服务初始化留在包内。
+项目采用标准 src-layout，正式包为 `rag_agent_platform`。根 `app.py` 只调用 UI，服务构造集中在
+`bootstrap.py`，Streamlit 用 `st.cache_resource` 避免重复加载 Chroma、Embedding、图和 Agent。
 
-## 问答链路
+## 运行链路
 
 ```text
 Streamlit UI
-    |
-    v
-AgentService
-    |
-    +--> Query Analyzer
-    +--> Retriever Router
-    |       |
-    |       +--> Naive Retriever
-    |       +--> Advanced Retriever
-    |       +--> Graph Retriever
-    |
-    +--> AnswerGenerator
-    +--> AnswerEvaluator
-    +--> Rewrite / Retry Loop
-    +--> AgentResult -> answer + citations + execution_trace
+    ↓
+ServiceContainer
+    ├─ CoordinatedIngestionPipeline
+    │   ├─ RealIngestionPipeline → Loader/Cleaner/ParentChildChunker
+    │   ├─ FileDocumentRepository
+    │   ├─ ChromaVectorStore
+    │   ├─ BM25.refresh()
+    │   └─ NetworkXGraphService.build/delete_document()
+    └─ LangGraphAgentService
+        ↓
+      analyze_query
+        ├─ CHAT/NONE ───────────────→ direct_generate → END
+        ├─ SIMPLE/NAIVE ────────────→ naive_retrieve
+        ├─ COMPLEX/ADVANCED ────────→ advanced_retrieve
+        └─ RELATION/GRAPH ──────────→ graph_retrieve
+                                         ↓
+                                    generate_answer
+                                         ↓
+                                    evaluate_answer
+                                    ├─ passed → END
+                                    ├─ fail + budget → rewrite_query → analyze_query
+                                    └─ fail + limit → insufficient_answer → END
 ```
 
-Retriever Router 根据手动模式或问题分类选择策略。所有 Retriever（包括 Graph Retriever）都
-必须返回按 `normalized_score` 降序排列的 `list[RetrievedChunk]`，从而让 Generator、Evaluator
-和 UI 不依赖具体存储或检索库。
+这同时体现：
 
-未来的 Rewrite Loop 在评估不通过且未达到 `max_retries` 时，使用 `suggested_query` 更新
-`AgentState.current_query` 后重新检索。本阶段只定义 State 和接口；Mock Agent 固定评估通过，
-不构建真实 LangGraph 工作流。
+- Workflow：`analyze → retrieve → generate → evaluate`；
+- Branch：CHAT、NAIVE、ADVANCED、GRAPH 条件边；
+- Loop：评估失败且 `retry_count < max_retries` 时重写后回到分析节点。
 
-## 文档入库链路
+## 检索装配
 
-```text
-Uploaded File
-    |
-    v
-IngestionPipeline
-    +--> Loader / Parser
-    +--> Cleaner
-    +--> Parent Chunk Splitter
-    +--> Child Chunk Splitter
-    +--> DocumentRepository
-    |       +--> Document metadata
-    |       +--> Parent chunks
-    |       +--> Child chunks
-    +--> Vector Store (future)
-    +--> GraphService.build (future)
-```
+- `NaiveRetriever` 是轻量命名适配器，实际委托成员二 `DenseRetriever`，再由
+  `ParentContextRetriever` 根据 `parent_id` 回溯成员一父块；
+- `AdvancedRetriever` 委托现有 Dense/BM25/Hybrid/RRF/MultiQuery/Reranker/Compression
+  组合，不复制检索算法；
+- `GraphRetriever` 委托成员三 `NetworkXGraphService`，图证据转换为相同的
+  `RetrievedChunk`；
+- 所有结果经公共验证层过滤、去重、截断并按 `normalized_score` 降序排列，原始 Dense、BM25、
+  RRF 与图分数保留在 metadata。
 
-当前 `MockIngestionPipeline` 只读取 UTF-8 TXT/Markdown，固定长度切块后写入
-`MockDocumentRepository`。PDF/DOCX、Chroma、MySQL、Embedding 与图构建均只保留边界。
+## 生成、评估与模型
 
-## 当前 Mock 闭环
+`llm.py` 是唯一 ChatModel 初始化位置，当前支持 OpenAI-compatible chat completions。结构化问题
+分类和评估会解析 JSON；模型异常时分类记录轨迹后回落到规则，评估则保守失败。未配置 LLM 时
+使用真实上下文的抽取式 `GroundedAnswerGenerator` 和引用校验，不构造虚假答案。
 
-Streamlit 上传文本或使用内置 Mock 文档，用户选择知识源和模式后调用 `MockAgentService`。
-自动模式通过简单规则选择 NONE、NAIVE、ADVANCED 或 GRAPH；Mock Retriever 返回规范化证据，
-Mock Agent 生成明确标识的占位回答、Citation 和固定执行轨迹。该流程只验证工程集成。
+每个上下文编号包含 source、page、retrieval_method 和 content；最终 `Citation` 从同一份
+`RetrievedChunk` 顺序构建。生成始终回答 `original_query`，重写只影响检索的 `current_query`。
+
+## 数据与生命周期
+
+文档入库同时写 JSON Repository 和 Chroma；协调适配器随后刷新 BM25 并增量构建图。删除操作
+调用真实 pipeline、图服务和 BM25 刷新。运行数据全部位于被 `.gitignore` 排除的 `data/` 子目录。
+
+`APP_MODE=real` 是默认值；`APP_MODE=mock` 只用于显式离线开发，不参与真实模式故障降级。

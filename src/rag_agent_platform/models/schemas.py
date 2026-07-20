@@ -108,3 +108,5 @@ class AgentResult:
     query_type: QueryType
     retry_count: int
     execution_trace: list[str] = field(default_factory=list)
+    retrieved_chunks: list[RetrievedChunk] = field(default_factory=list)
+    error: str | None = None

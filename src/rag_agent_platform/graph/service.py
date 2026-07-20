@@ -125,7 +125,7 @@ class NetworkXGraphService(GraphService):
         query: str,
         document_ids: list[str] | None = None,
         top_k: int = 5,
-    ) -> list[object]:
+    ) -> list[RetrievedChunk]:
         """Return graph evidence as ``list[RetrievedChunk]``.
 
         1. Extract entity mentions from *query* via the extractor.
@@ -161,7 +161,7 @@ class NetworkXGraphService(GraphService):
         )
 
         # 3. Assemble RetrievedChunk objects
-        results: list[object] = []
+        results: list[RetrievedChunk] = []
         for chunk_id, score in chunk_scores:
             content = self._chunk_content.get(chunk_id, "")
             if not content:
@@ -187,8 +187,8 @@ class NetworkXGraphService(GraphService):
                     },
                 )
                 results.append(chunk)
-            except Exception:
-                # Skip chunks that fail validation (e.g. empty content)
+            except ValueError:
+                # Invalid legacy chunks cannot satisfy the public RetrievedChunk contract.
                 continue
 
         # Results are already sorted by the store; ensure descending

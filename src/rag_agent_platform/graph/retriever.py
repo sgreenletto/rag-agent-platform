@@ -55,7 +55,7 @@ class GraphRetriever(BaseRetriever):
         query: str,
         document_ids: list[str] | None = None,
         top_k: int = 5,
-    ) -> list[object]:
+    ) -> list[RetrievedChunk]:
         """Retrieve graph evidence as ``list[RetrievedChunk]``.
 
         Args:

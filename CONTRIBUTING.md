@@ -20,6 +20,7 @@
 ## 合并前检查
 
 ```powershell
+uv run python -m compileall src tests app.py
 uv run ruff format --check .
 uv run ruff check .
 uv run pytest -q
@@ -48,12 +49,23 @@ uv run streamlit run app.py
 确需修改时，先在 Pull Request 中说明原因、字段变化、兼容方案和受影响模块，由全组确认；
 同步修改接口文档和契约测试，不允许在单个功能分支中复制或绕开公共模型。
 
+当前 `AgentResult` 在原字段之后增加了带默认值的 `retrieved_chunks` 与 `error`，属于构造兼容的
+可选扩展。后续扩展同样必须保留旧调用方式。
+
 ## 包与依赖
 
 - 使用 `uv` 管理环境和依赖；
 - 项目采用标准 src-layout，代码从 `rag_agent_platform` 导入；
 - 新模块放在 `src/rag_agent_platform/`，不要把 `src` 当成 Python 包；
 - 新增依赖必须与当前功能直接相关，并同步更新 `pyproject.toml` 与 `uv.lock`。
+- 服务构造统一放在 `rag_agent_platform.bootstrap`；UI、节点和 Retriever 内不得各自初始化 Provider。
+
+## 真实与 Mock 模式
+
+- 默认 `APP_MODE=real`，真实异常必须暴露给 UI；
+- 只有明确设置 `APP_MODE=mock` 才能构造 Mock 服务，页面必须标注；
+- 单元测试优先依赖注入 Fake/Mock，不允许用硬编码答案冒充真实集成测试；
+- 文档新增或删除必须通过 `CoordinatedIngestionPipeline` 同步 Chroma、BM25 和 Graph。
 
 ## 安全与运行数据
 

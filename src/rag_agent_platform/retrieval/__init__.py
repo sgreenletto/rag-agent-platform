@@ -17,6 +17,8 @@ from rag_agent_platform.retrieval.multi_query import (
     MultiQueryRetriever,
     QueryTransformer,
 )
+from rag_agent_platform.retrieval.parent import ParentContextRetriever
+from rag_agent_platform.retrieval.pipelines import AdvancedRetriever, NaiveRetriever
 from rag_agent_platform.retrieval.reranker import (
     BaseReranker,
     RerankingRetriever,
@@ -25,6 +27,7 @@ from rag_agent_platform.retrieval.reranker import (
 from rag_agent_platform.retrieval.threshold import RelevanceThreshold, ThresholdRetriever
 
 __all__ = [
+    "AdvancedRetriever",
     "BM25Retriever",
     "BaseReranker",
     "BaseRetriever",
@@ -38,6 +41,8 @@ __all__ = [
     "IdentityQueryTransformer",
     "MockRetriever",
     "MultiQueryRetriever",
+    "NaiveRetriever",
+    "ParentContextRetriever",
     "QueryTransformer",
     "RelevanceThreshold",
     "RerankingRetriever",
