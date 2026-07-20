@@ -2,6 +2,7 @@
 
 from rag_agent_platform.models import RetrievedChunk
 from rag_agent_platform.retrieval.base import BaseRetriever
+from rag_agent_platform.retrieval.validation import finalize_results, validate_retrieval_request
 
 
 class MockRetriever(BaseRetriever):
@@ -23,18 +24,8 @@ class MockRetriever(BaseRetriever):
         document_ids: list[str] | None = None,
         top_k: int = 5,
     ) -> list[RetrievedChunk]:
-        if not query.strip():
-            raise ValueError("query must not be empty")
-        if top_k <= 0:
-            raise ValueError("top_k must be greater than 0")
-
-        allowed_ids = set(document_ids) if document_ids else None
-        filtered = [
-            chunk
-            for chunk in self._chunks
-            if allowed_ids is None or chunk.document_id in allowed_ids
-        ]
-        return sorted(filtered, key=lambda chunk: chunk.normalized_score, reverse=True)[:top_k]
+        validate_retrieval_request(query, top_k)
+        return finalize_results(self._chunks, document_ids, top_k)
 
     @staticmethod
     def _default_chunks(retrieval_method: str) -> list[RetrievedChunk]:

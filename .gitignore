@@ -31,7 +31,10 @@ logs/*
 *.sqlite
 *.sqlite3
 
-# Models and large files
+# Models and large files (repository-root model artifacts only)
 /models/
 *.bin
 *.safetensors
+
+# Local handoff notes (not committed)
+MEMBER2_HANDOFF.local.md

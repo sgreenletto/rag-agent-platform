@@ -6,22 +6,68 @@ GraphRAG 与 Agentic RAG，并统一文档来源、检索结果、回答和评�
 
 ## 当前阶段
 
-当前版本是“正式工程骨架和 Mock 闭环”，用于稳定公共接口并支持成员并行开发。已实现：
+当前版本以“正式工程骨架和 Mock 闭环”为基线，并已开始接入真实检索组件。已实现：
 
 - dataclass 公共数据模型与抽象接口；
 - TXT、Markdown 固定长度 Mock 入库；
 - 内存 Mock 文档仓库；
 - Naive、Advanced、Graph 三个统一契约的 Mock Retriever；
+- 基于 jieba/rank-bm25 的 BM25 Retriever；
+- 面向 Chroma 等向量存储适配器的 Dense Retriever；
+- 支持加权 RRF、候选去重与可观测降级的 Hybrid Retriever；
+- 可插拔 Query Transformer、Multi-Query RRF 合并与查询改写降级；
+- 可插拔 Reranker 接口和可运行的 Token Overlap Reranker；
+- 保留证据来源的句子级上下文压缩和可组合无答案阈值；
+- 支持 JSON/JSONL 问题集、标准排名指标、耗时统计和多模式对比的离线评估；
 - 规则路由的 Mock AgentService；
 - 可上传、选择知识源、聊天并查看来源与执行轨迹的 Streamlit 页面；
 - pytest、Ruff、协作文档与接口测试。
 
-这些 Mock 只验证调用链，不代表真实 RAG、真实检索质量或真实 Agentic RAG 已完成。
+BM25 可对 `ChunkCorpus` 的真实文本快照执行稀疏检索；Dense 目前只完成存储无关的 Retriever
+和 Backend 接口，尚未接入真实 Embedding/Chroma。Hybrid 已能融合任意遵守公共契约的 Dense
+和 Sparse 实现；Multi-Query 与 Reranker 已提供模型无关接口，但尚未接入真实 LLM Rewrite 或
+Cross-Encoder/Rerank API。上下文压缩与无答案策略已有确定性实现，但阈值尚未通过真实评估集
+校准。这些 Mock 仍只验证其他调用链，不代表完整生产级 Advanced RAG、真实生成或 Agentic
+RAG 已完成。
 
-## 最终目标
+## 检索与评估模块完成情况
 
-后续版本将逐步接入文档解析、父子切块、向量与元数据存储、Dense/BM25/RRF/Reranker、
-知识图谱、真实生成与评估、查询改写循环和完整 LangGraph 工作流。
+代码位于 `rag_agent_platform.retrieval` 和
+`rag_agent_platform.evaluation`。所有 Retriever 对上层保持同一个同步接口：
+
+```python
+retrieve(
+    query: str,
+    document_ids: list[str] | None = None,
+    top_k: int = 5,
+) -> list[RetrievedChunk]
+```
+
+契约约定：空查询和非法 `top_k` 抛出 `ValueError`；`document_ids=None` 表示不限制文档，
+`document_ids=[]` 表示没有可检索文档；结果按归一化分数降序排列、按 `chunk_id` 去重且不超过
+Top-K。当前完成内容如下：
+
+| 阶段 | 状态 | 已完成内容 |
+|---|---|---|
+| 1. 公共基础 | 完成 | 公共模型恢复、`BaseRetriever` 契约、`ChunkCorpus`、统一请求校验、分数归一化、过滤、排序和去重 |
+| 2. 单路检索 | 完成 | 中英文/技术词 Tokenizer、可刷新 BM25、`DenseSearchBackend`、similarity/distance Dense Retriever |
+| 3. 混合检索 | 完成 | 加权 RRF、Dense + Sparse Hybrid、候选扩大、单路异常可观测降级、严格失败模式 |
+| 4. 查询增强与重排 | 完成 | `QueryTransformer`、Multi-Query、查询级 RRF、`BaseReranker`、Token Overlap Reranker、重排包装器 |
+| 5. 后处理 | 完成 | 句子级上下文压缩、字符预算、组合无答案阈值、Compression/Threshold Retriever 包装器 |
+| 6. 离线评估 | 完成 | JSON/JSONL 数据集、Recall@K、Precision@K、Hit Rate@K、MRR、nDCG、无答案准确率、耗时、多模式 Runner 和 CLI |
+
+完整离线组合测试已覆盖：
+
+```text
+query
+→ MultiQuery
+→ Dense + BM25
+→ RRF
+→ Reranker
+→ Compression
+→ Threshold
+→ list[RetrievedChunk]
+```
 
 ## 技术栈
 
@@ -90,6 +136,13 @@ uv run ruff format --check .
 uv run ruff check .
 uv run pytest -q
 ```
+
+检索评估的数据格式、指标口径和模式对比命令见
+[`docs/retrieval-evaluation.md`](docs/retrieval-evaluation.md)。
+
+BM25 使用全量 `ChunkCorpus` 快照构建内存索引；成员一完成新增、更新或删除后，需要由集成层
+调用 `BM25Retriever.refresh()`。当前没有自动事件订阅。多查询、混合召回与重排的候选倍数会
+逐层相乘，真实服务接入前应由团队装配层设置统一的总候选量和调用预算。
 
 ## 当前 Mock 能力
 
