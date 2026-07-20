@@ -1,7 +1,7 @@
 import pytest
+from rag_agent_platform.models.schemas import AgentResult, QueryType, RetrievalStrategy
 
 from rag_agent_platform.agent.mock import MockAgentService
-from rag_agent_platform.models.schemas import AgentResult, QueryType, RetrievalStrategy
 from rag_agent_platform.retrieval.mock import MockRetriever
 
 
