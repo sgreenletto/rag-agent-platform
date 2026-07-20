@@ -96,6 +96,82 @@ class TextDocumentLoader:
         )
 
 
+class PdfDocumentLoader:
+    """Extract text from PDF documents with pypdf."""
+
+    supported_suffixes = {".pdf"}
+
+    def load(self, file_path: str | Path) -> LoadedDocument:
+        """Read one PDF file."""
+        from pypdf import PdfReader
+
+        path = Path(file_path)
+        self._validate_path(path)
+
+        reader = PdfReader(str(path))
+        page_texts = [page.extract_text() or "" for page in reader.pages]
+        content = "\n\n".join(text.strip() for text in page_texts if text.strip())
+        if not content.strip():
+            raise ValueError("document must not be empty")
+        return LoadedDocument(
+            content=content,
+            metadata={
+                "filename": path.name,
+                "source_path": str(path.resolve()),
+                "file_type": "pdf",
+                "page_count": len(reader.pages),
+            },
+        )
+
+    def _validate_path(self, path: Path) -> None:
+        if not path.exists() or not path.is_file():
+            raise FileNotFoundError(f"document does not exist: {path}")
+        if path.suffix.lower() not in self.supported_suffixes:
+            raise ValueError(f"unsupported file type: {path.suffix or '(none)'}")
+
+
+class DocxDocumentLoader:
+    """Extract text from DOCX paragraphs and tables."""
+
+    supported_suffixes = {".docx"}
+
+    def load(self, file_path: str | Path) -> LoadedDocument:
+        """Read one DOCX file."""
+        from docx import Document as DocxDocument
+
+        path = Path(file_path)
+        self._validate_path(path)
+
+        document = DocxDocument(str(path))
+        paragraphs = [paragraph.text.strip() for paragraph in document.paragraphs]
+        table_cells = [
+            cell.text.strip()
+            for table in document.tables
+            for row in table.rows
+            for cell in row.cells
+        ]
+        text_parts = [text for text in [*paragraphs, *table_cells] if text]
+        content = "\n".join(text_parts)
+        if not content.strip():
+            raise ValueError("document must not be empty")
+        return LoadedDocument(
+            content=content,
+            metadata={
+                "filename": path.name,
+                "source_path": str(path.resolve()),
+                "file_type": "docx",
+                "paragraph_count": len(document.paragraphs),
+                "table_count": len(document.tables),
+            },
+        )
+
+    def _validate_path(self, path: Path) -> None:
+        if not path.exists() or not path.is_file():
+            raise FileNotFoundError(f"document does not exist: {path}")
+        if path.suffix.lower() not in self.supported_suffixes:
+            raise ValueError(f"unsupported file type: {path.suffix or '(none)'}")
+
+
 def build_default_loader_registry() -> LoaderRegistry:
     """Build the default loader registry used by demos and the real pipeline."""
-    return LoaderRegistry([TextDocumentLoader()])
+    return LoaderRegistry([TextDocumentLoader(), PdfDocumentLoader(), DocxDocumentLoader()])

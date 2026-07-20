@@ -112,7 +112,14 @@ def run(args: Namespace) -> None:
         preview = content.strip().replace("\n", " ")[:80]
         print(f"filename: {loaded.metadata['filename']}")
         print(f"file_type: {loaded.metadata['file_type']}")
-        print(f"encoding: {loaded.metadata['encoding']}")
+        if "encoding" in loaded.metadata:
+            print(f"encoding: {loaded.metadata['encoding']}")
+        if "page_count" in loaded.metadata:
+            print(f"page_count: {loaded.metadata['page_count']}")
+        if "paragraph_count" in loaded.metadata:
+            print(f"paragraph_count: {loaded.metadata['paragraph_count']}")
+        if "table_count" in loaded.metadata:
+            print(f"table_count: {loaded.metadata['table_count']}")
         if args.show_clean:
             print(f"raw_characters: {len(loaded.content)}")
             print(f"cleaned_characters: {len(content)}")
