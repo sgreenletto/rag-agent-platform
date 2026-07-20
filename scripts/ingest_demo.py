@@ -32,6 +32,11 @@ def build_parser() -> ArgumentParser:
     parser.add_argument(
         "--repo-smoke", action="store_true", help="Run repository smoke checks later."
     )
+    parser.add_argument(
+        "--adapter-smoke",
+        action="store_true",
+        help="Run member-two adapter smoke checks.",
+    )
     return parser
 
 
@@ -69,6 +74,13 @@ def run(args: Namespace) -> None:
                 file_type=loaded.metadata["file_type"],
             )
             return
+        if args.adapter_smoke:
+            run_adapter_smoke(
+                content=content,
+                filename=loaded.metadata["filename"],
+                file_type=loaded.metadata["file_type"],
+            )
+            return
         if args.show_chunks:
             chunker = ParentChildChunker(
                 ChunkingConfig(parent_chunk_size=80, child_chunk_size=32, child_overlap=8)
@@ -99,7 +111,7 @@ def run(args: Namespace) -> None:
             print(f"characters: {len(loaded.content)}")
         print(f"preview: {preview}")
         return
-    if args.show_clean or args.show_chunks:
+    if args.show_clean or args.show_chunks or args.adapter_smoke:
         print("selected smoke option is reserved for a later implementation step")
         return
     print("ingestion demo is ready; use --help to see available commands")
@@ -167,6 +179,44 @@ def run_chroma_smoke(*, content: str, filename: str, file_type: str) -> None:
         print(f"document_count_after_upsert: {vector_store.count('demo-document')}")
         vector_store.delete_document("demo-document")
         print(f"document_count_after_delete: {vector_store.count('demo-document')}")
+
+
+def run_adapter_smoke(*, content: str, filename: str, file_type: str) -> None:
+    """Run a minimal member-two adapter check."""
+    from rag_agent_platform.storage import ChromaDenseSearchBackend, RepositoryChunkCorpus
+
+    with TemporaryDirectory(ignore_cleanup_errors=True) as temp_dir:
+        chunker = ParentChildChunker(
+            ChunkingConfig(parent_chunk_size=120, child_chunk_size=48, child_overlap=12)
+        )
+        parents, children = chunker.split(
+            document_id="demo-document",
+            content=content,
+            source=filename,
+            file_type=file_type,
+        )
+        repository = FileDocumentRepository(f"{temp_dir}/documents.json")
+        repository.save_parent_chunks(parents)
+        repository.save_child_chunks(children)
+        corpus = RepositoryChunkCorpus(repository)
+
+        vector_store = ChromaVectorStore(
+            persist_directory=f"{temp_dir}/chroma",
+            collection_name="adapter_child_chunks",
+            embedding_model=HashEmbeddingModel(dimensions=16),
+        )
+        vector_store.upsert_child_chunks(children)
+        dense_backend = ChromaDenseSearchBackend(vector_store)
+        hits = dense_backend.search("请假申请", document_ids=["demo-document"], limit=2)
+
+        print(f"corpus_chunks: {len(corpus.list_chunks(['demo-document']))}")
+        print(f"dense_hits: {len(hits)}")
+        if hits:
+            first_hit = hits[0]
+            print(f"first_hit_chunk_id: {first_hit.chunk.chunk_id}")
+            print(f"first_hit_document_id: {first_hit.chunk.document_id}")
+            print(f"first_hit_parent_id: {first_hit.chunk.parent_id}")
+            print(f"first_hit_source: {first_hit.source}")
 
 
 if __name__ == "__main__":
