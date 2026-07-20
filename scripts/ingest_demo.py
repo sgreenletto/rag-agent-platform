@@ -2,11 +2,14 @@
 
 import sys
 from argparse import ArgumentParser, Namespace
+from tempfile import TemporaryDirectory
 
 from rag_agent_platform.ingestion.chunker import ChunkingConfig, ParentChildChunker
 from rag_agent_platform.ingestion.cleaner import TextCleaner
 from rag_agent_platform.ingestion.loaders import build_default_loader_registry
 from rag_agent_platform.ingestion.pipeline import RealIngestionPipeline
+from rag_agent_platform.models import ChildChunk, DocumentRecord, ParentChunk
+from rag_agent_platform.storage.file_repository import FileDocumentRepository
 
 
 def build_parser() -> ArgumentParser:
@@ -42,6 +45,9 @@ def main() -> None:
 def run(args: Namespace) -> None:
     """Dispatch the selected smoke action."""
     pipeline = RealIngestionPipeline()
+    if args.repo_smoke:
+        run_repository_smoke()
+        return
     if args.list:
         documents = pipeline.list_documents()
         print(f"documents: {len(documents)}")
@@ -84,10 +90,48 @@ def run(args: Namespace) -> None:
             print(f"characters: {len(loaded.content)}")
         print(f"preview: {preview}")
         return
-    if args.show_clean or args.show_chunks or args.index or args.repo_smoke:
+    if args.show_clean or args.show_chunks or args.index:
         print("selected smoke option is reserved for a later implementation step")
         return
     print("ingestion demo is ready; use --help to see available commands")
+
+
+def run_repository_smoke() -> None:
+    """Run a minimal persistent repository check."""
+    with TemporaryDirectory() as temp_dir:
+        repository = FileDocumentRepository(f"{temp_dir}/documents.json")
+        document = DocumentRecord(
+            document_id="demo-document",
+            filename="leave_policy.txt",
+            file_type="txt",
+            source_path="tests/fixtures/leave_policy.txt",
+            status="ready",
+        )
+        parent = ParentChunk(
+            chunk_id="demo-parent",
+            document_id=document.document_id,
+            content="员工请假制度父块",
+            metadata={"source": document.filename},
+        )
+        child = ChildChunk(
+            chunk_id="demo-child",
+            document_id=document.document_id,
+            parent_id=parent.chunk_id,
+            content="员工请假制度子块",
+            metadata={"source": document.filename, "parent_id": parent.chunk_id},
+        )
+        repository.save_document(document)
+        repository.save_parent_chunks([parent])
+        repository.save_child_chunks([child])
+        print(f"documents_after_save: {len(repository.list_documents())}")
+        print(f"parent_chunks_after_save: {len(repository.list_parent_chunks())}")
+        print(f"child_chunks_after_save: {len(repository.list_child_chunks())}")
+
+        reloaded = FileDocumentRepository(f"{temp_dir}/documents.json")
+        print(f"documents_after_reload: {len(reloaded.list_documents())}")
+        reloaded.delete_document(document.document_id)
+        print(f"documents_after_delete: {len(reloaded.list_documents())}")
+        print(f"child_chunks_after_delete: {len(reloaded.list_child_chunks())}")
 
 
 if __name__ == "__main__":
