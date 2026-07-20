@@ -24,6 +24,7 @@ Thumbs.db
 # Runtime data
 data/uploads/*
 !data/uploads/.gitkeep
+data/metadata/*
 data/chroma/*
 !data/chroma/.gitkeep
 data/graph/*
@@ -33,7 +34,10 @@ logs/*
 *.sqlite
 *.sqlite3
 
-# Models and large files
-models/
+# Models and large files (repository-root model artifacts only)
+/models/
 *.bin
 *.safetensors
+
+# Local handoff notes (not committed)
+MEMBER2_HANDOFF.local.md
