@@ -6,7 +6,7 @@ from typing import Any
 from rag_agent_platform.ingestion.base import IngestionPipeline
 from rag_agent_platform.ingestion.chunker import ParentChildChunker
 from rag_agent_platform.ingestion.cleaner import TextCleaner
-from rag_agent_platform.ingestion.loaders import LoaderRegistry
+from rag_agent_platform.ingestion.loaders import LoaderRegistry, build_default_loader_registry
 from rag_agent_platform.models import DocumentRecord, IngestionResult
 from rag_agent_platform.storage.base import DocumentRepository
 
@@ -23,7 +23,7 @@ class RealIngestionPipeline(IngestionPipeline):
         repository: DocumentRepository | None = None,
         vector_store: Any | None = None,
     ) -> None:
-        self._loader_registry = loader_registry or LoaderRegistry()
+        self._loader_registry = loader_registry or build_default_loader_registry()
         self._cleaner = cleaner or TextCleaner()
         self._chunker = chunker or ParentChildChunker()
         self._repository = repository
