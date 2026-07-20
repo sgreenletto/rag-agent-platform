@@ -3,6 +3,7 @@
 import sys
 from argparse import ArgumentParser, Namespace
 
+from rag_agent_platform.ingestion.cleaner import TextCleaner
 from rag_agent_platform.ingestion.loaders import build_default_loader_registry
 from rag_agent_platform.ingestion.pipeline import RealIngestionPipeline
 
@@ -50,11 +51,16 @@ def run(args: Namespace) -> None:
         return
     if args.file_path:
         loaded = build_default_loader_registry().load(args.file_path)
-        preview = loaded.content.strip().replace("\n", " ")[:80]
+        content = TextCleaner().clean(loaded.content) if args.show_clean else loaded.content
+        preview = content.strip().replace("\n", " ")[:80]
         print(f"filename: {loaded.metadata['filename']}")
         print(f"file_type: {loaded.metadata['file_type']}")
         print(f"encoding: {loaded.metadata['encoding']}")
-        print(f"characters: {len(loaded.content)}")
+        if args.show_clean:
+            print(f"raw_characters: {len(loaded.content)}")
+            print(f"cleaned_characters: {len(content)}")
+        else:
+            print(f"characters: {len(loaded.content)}")
         print(f"preview: {preview}")
         return
     if args.show_clean or args.show_chunks or args.index or args.repo_smoke:
