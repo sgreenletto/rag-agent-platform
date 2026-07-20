@@ -5,10 +5,12 @@ description = "A modular document RAG platform with Naive RAG, Advanced RAG, Gra
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
+    "jieba>=0.42.1",
     "langchain-core",
     "langgraph",
     "pydantic-settings",
     "python-dotenv",
+    "rank-bm25>=0.2.2",
     "streamlit",
 ]
 

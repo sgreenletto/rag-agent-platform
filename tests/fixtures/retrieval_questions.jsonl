@@ -1,0 +1,3 @@
+{"case_id":"leave","question":"员工有多少天年假？","relevant_chunk_ids":["leave-policy"],"relevant_document_ids":["hr"],"document_ids":["hr"],"answerable":true,"category":"exact"}
+{"case_id":"comparison","question":"比较差旅和招待费用规则。","relevant_chunk_ids":["travel-policy","hospitality-policy"],"relevant_document_ids":["finance"],"answerable":true,"category":"multi-evidence"}
+{"case_id":"unknown","question":"公司是否提供火星旅行补贴？","relevant_chunk_ids":[],"answerable":false,"category":"no-answer"}
