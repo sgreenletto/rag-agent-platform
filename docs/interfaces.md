@@ -59,7 +59,9 @@
 ### AgentResult
 
 字段为 `answer: str`、`citations: list[Citation]`、`strategy: RetrievalStrategy`、
-`query_type: QueryType`、`retry_count: int`、`execution_trace: list[str]`。
+`query_type: QueryType`、`retry_count: int`、`execution_trace: list[str]`，以及带默认值的
+`retrieved_chunks: list[RetrievedChunk]`、`error: str | None`。新增字段位于原构造字段之后，旧的
+位置参数和关键字构造保持兼容。
 
 ## IngestionPipeline
 
@@ -291,23 +293,41 @@ invoke(
 ) -> AgentResult
 ```
 
-`mode` 只允许 `agent`、`naive`、`advanced`、`graph`。当前
-`rag_agent_platform.agent.mock.MockAgentService` 只进行规则路由和 Mock 回答，不是完整
-LangGraph Agent。
+`mode` 只允许 `agent`、`naive`、`advanced`、`graph`，非法值抛出明确 `ValueError`。
+`rag_agent_platform.agent.service.LangGraphAgentService` 是正式实现；构造函数注入三个
+`BaseRetriever`、Generator、Evaluator、Analyzer 和 Rewriter。`MockAgentService` 只用于测试和
+显式 `APP_MODE=mock`。
 
 ## AgentState
 
 路径：`rag_agent_platform.agent.state.AgentState`，为 `TypedDict`，包含：
 
-- `original_query: str`、`current_query: str`、`document_ids: list[str]`；
+- `original_query: str`、`current_query: str`、`document_ids: list[str] | None`；
+- `mode: str`；
 - `query_type: QueryType`、`retrieval_strategy: RetrievalStrategy`；
 - `retrieved_chunks: list[RetrievedChunk]`、`retrieval_sufficient: bool`；
 - `answer: str`、`citations: list[Citation]`；
 - `answer_passed: bool`、`evaluation_reason: str`；
+- `suggested_query: str | None`；
 - `retry_count: int`、`max_retries: int`、`execution_trace: list[str]`；
 - `error: str | None`。
 
-本阶段只定义 State，不构建真实 LangGraph。
+正式 StateGraph 节点为 `analyze_query`、`direct_generate`、`naive_retrieve`、
+`advanced_retrieve`、`graph_retrieve`、`generate_answer`、`evaluate_answer`、
+`rewrite_query` 和 `insufficient_answer`。失败重写会真实增加 `retry_count`，默认最多重试 2 次。
+
+## Naive / Advanced 命名适配器
+
+`rag_agent_platform.retrieval.pipelines.NaiveRetriever` 和 `AdvancedRetriever` 只负责为装配后的
+成员二 Pipeline 提供稳定名称和统一委托，不复制 Dense、BM25、RRF 或 Reranker 算法。
+`ParentContextRetriever` 根据 `parent_id` 从 Repository 读取父块，保留命中的 child `chunk_id`、
+分数和 metadata，并把原子块文本写入 `metadata["matched_child_content"]`。
+
+## ServiceContainer
+
+`rag_agent_platform.bootstrap.build_service_container(settings)` 集中创建 Settings、Repository、
+Ingestion、Chroma、Naive、Advanced、Graph、ChatModel、Generator、Evaluator 和 Agent。默认
+`APP_MODE=real`；未配置 LLM 返回本地 grounded 组件，不等于 Mock。配置错误会抛出明确异常。
 
 ## 异常处理
 

@@ -84,6 +84,7 @@ class MockAgentService(AgentService):
             query_type=query_type,
             retry_count=0,
             execution_trace=list(self._TRACE),
+            retrieved_chunks=chunks,
         )
 
     @staticmethod

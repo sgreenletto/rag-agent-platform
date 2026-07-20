@@ -15,10 +15,12 @@ from rag_agent_platform.evaluation.retrieval_runner import (
     RetrievalEvaluationSummary,
     RetrievalModeReport,
 )
+from rag_agent_platform.evaluation.service import GroundedAnswerEvaluator
 
 __all__ = [
     "AnswerEvaluator",
     "EvaluationResult",
+    "GroundedAnswerEvaluator",
     "RankingMetrics",
     "RetrievalCaseResult",
     "RetrievalEvaluationCase",

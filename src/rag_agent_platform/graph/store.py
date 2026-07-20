@@ -375,6 +375,8 @@ def _infer_document_id(chunk_id: str) -> str:
     # Heuristic: chunk ids often embed the document id
     if "::" in chunk_id:
         return chunk_id.split("::", 1)[0]
+    if ":child:" in chunk_id:
+        return chunk_id.split(":child:", 1)[0]
     return ""
 
 

@@ -1,4 +1,5 @@
 import pytest
+
 from rag_agent_platform.models.schemas import RetrievedChunk
 
 

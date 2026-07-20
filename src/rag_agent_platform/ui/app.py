@@ -1,13 +1,8 @@
-"""Streamlit application assembly for the Mock project skeleton."""
+"""Streamlit application assembly."""
 
 import streamlit as st
 
-from rag_agent_platform.agent import MockAgentService
-from rag_agent_platform.config import settings
-from rag_agent_platform.ingestion import MockIngestionPipeline
-from rag_agent_platform.models import DocumentRecord
-from rag_agent_platform.retrieval import MockRetriever
-from rag_agent_platform.storage import MockDocumentRepository
+from rag_agent_platform.bootstrap import ServiceContainer, build_service_container
 from rag_agent_platform.ui.components import (
     render_agent_result,
     render_chat_history,
@@ -17,59 +12,38 @@ from rag_agent_platform.ui.session import initialize_session_state
 
 
 @st.cache_resource
-def build_mock_services() -> tuple[MockIngestionPipeline, MockAgentService]:
-    """Create process-local Mock services shared across Streamlit reruns."""
-
-    repository = MockDocumentRepository()
-    repository.save_document(
-        DocumentRecord(
-            document_id="mock-document-1",
-            filename="mock-policy.txt",
-            file_type="txt",
-            source_path="mock://mock-policy.txt",
-            status="mock-ready",
-            metadata={"mock": True},
-        )
-    )
-    repository.save_document(
-        DocumentRecord(
-            document_id="mock-document-2",
-            filename="mock-handbook.md",
-            file_type="md",
-            source_path="mock://mock-handbook.md",
-            status="mock-ready",
-            metadata={"mock": True},
-        )
-    )
-    ingestion = MockIngestionPipeline(repository)
-    agent = MockAgentService(
-        naive_retriever=MockRetriever(retrieval_method="naive"),
-        advanced_retriever=MockRetriever(retrieval_method="advanced"),
-        graph_retriever=MockRetriever(retrieval_method="graph"),
-    )
-    return ingestion, agent
+def build_services() -> ServiceContainer:
+    """Create and cache heavyweight storage, embedding and graph resources."""
+    return build_service_container()
 
 
 def run_app() -> None:
     """Configure and render the complete Streamlit application."""
-
-    st.set_page_config(
-        page_title="模块化智能文档问答系统",
-        page_icon="📚",
-        layout="wide",
-    )
+    st.set_page_config(page_title="模块化智能文档问答系统", page_icon="📄", layout="wide")
     initialize_session_state()
-    ingestion, agent = build_mock_services()
-    selected_document_ids, current_mode = render_sidebar(ingestion)
+    try:
+        container = build_services()
+    except (OSError, RuntimeError, TypeError, ValueError) as exc:
+        st.error(f"服务初始化失败：{exc}")
+        st.info("请检查 .env 中的 APP_MODE、LLM、Embedding 与本地存储配置。")
+        st.stop()
 
-    st.title(settings.app_name)
-    st.subheader("模块化智能文档问答系统")
-    st.warning(
-        "当前为工程骨架和 Mock 阶段：仅用于验证接口、路由与 UI 闭环，"
-        "尚未接入真实 LLM、Embedding、数据库或完整 LangGraph Agent。"
+    selected_document_ids, current_mode = render_sidebar(
+        container.ingestion,
+        app_mode=container.app_mode,
+        upload_directory=container.settings.upload_directory,
     )
-    render_chat_history()
+    st.title(container.settings.app_name)
+    st.subheader("模块化智能文档问答系统")
+    if container.app_mode == "mock":
+        st.warning("当前显式启用了 APP_MODE=mock；页面结果仅用于无外部依赖的开发测试。")
+    elif not container.llm_configured:
+        st.info(
+            "当前未配置远程 LLM：系统仍使用真实入库与检索，并采用本地规则分类、"
+            "保守抽取式生成和引用校验。配置 LLM_PROVIDER 后可启用模型生成与结构化评估。"
+        )
 
+    render_chat_history()
     query = st.chat_input("请输入你的问题")
     if not query:
         return
@@ -79,13 +53,13 @@ def run_app() -> None:
         st.markdown(query)
 
     try:
-        result = agent.invoke(
+        result = container.agent.invoke(
             query=query,
             document_ids=selected_document_ids,
             mode=current_mode,
         )
     except (KeyError, TypeError, ValueError) as exc:
-        st.error(f"Mock 问答执行失败：{exc}")
+        st.error(f"问答执行失败：{exc}")
         return
 
     st.session_state.messages.append(
