@@ -1,6 +1,6 @@
 import pytest
-
 from rag_agent_platform.models.schemas import RetrievedChunk
+
 from rag_agent_platform.retrieval.mock import MockRetriever
 
 

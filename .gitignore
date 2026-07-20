@@ -18,6 +18,9 @@ htmlcov/
 .DS_Store
 Thumbs.db
 
+# Local handoff documents (not tracked)
+*.local.md
+
 # Runtime data
 data/uploads/*
 !data/uploads/.gitkeep
