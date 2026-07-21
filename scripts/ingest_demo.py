@@ -11,8 +11,11 @@ from rag_agent_platform.ingestion.cleaner import TextCleaner
 from rag_agent_platform.ingestion.loaders import build_default_loader_registry
 from rag_agent_platform.ingestion.pipeline import RealIngestionPipeline
 from rag_agent_platform.models import ChildChunk, DocumentRecord, ParentChunk
-from rag_agent_platform.storage.chroma_store import ChromaVectorStore
-from rag_agent_platform.storage.file_repository import FileDocumentRepository
+from rag_agent_platform.storage import (
+    ChromaVectorStore,
+    FileDocumentRepository,
+    build_document_repository,
+)
 
 
 def build_parser() -> ArgumentParser:
@@ -238,7 +241,7 @@ def run_adapter_smoke(*, content: str, filename: str, file_type: str) -> None:
 
 def build_real_pipeline() -> RealIngestionPipeline:
     """Build the default local ingestion pipeline used by this demo."""
-    repository = FileDocumentRepository(settings.metadata_path)
+    repository = build_document_repository(settings)
     return RealIngestionPipeline(
         repository=repository,
         vector_store=ChromaVectorStore(

@@ -35,9 +35,9 @@ from rag_agent_platform.storage import (
     ChromaDenseSearchBackend,
     ChromaVectorStore,
     DocumentRepository,
-    FileDocumentRepository,
     MockDocumentRepository,
     RepositoryChunkCorpus,
+    build_document_repository,
 )
 
 
@@ -65,7 +65,7 @@ def build_service_container(config: Settings | None = None) -> ServiceContainer:
 
 
 def _build_real_container(config: Settings) -> ServiceContainer:
-    repository = FileDocumentRepository(config.metadata_path)
+    repository = build_document_repository(config)
     embedding_model = build_embedding_model(config)
     vector_store = ChromaVectorStore(
         persist_directory=config.chroma_persist_directory,

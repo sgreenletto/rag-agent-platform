@@ -20,6 +20,7 @@ class Settings(BaseSettings):
     embedding_api_key: str = ""
     embedding_base_url: str = ""
 
+    document_repository_provider: str = "file"
     metadata_path: str = "data/metadata/documents.json"
     chroma_persist_directory: str = "data/chroma"
     chroma_collection_name: str = "rag_child_chunks"
@@ -34,6 +35,8 @@ class Settings(BaseSettings):
     mysql_user: str = ""
     mysql_password: str = ""
     mysql_database: str = "rag_agent"
+    mysql_charset: str = "utf8mb4"
+    mysql_connect_timeout: int = 5
 
     model_config = SettingsConfigDict(
         env_file=".env",

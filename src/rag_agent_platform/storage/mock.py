@@ -39,3 +39,22 @@ class MockDocumentRepository(DocumentRepository):
 
     def save_child_chunks(self, chunks: list[ChildChunk]) -> None:
         self._child_chunks.update({chunk.chunk_id: chunk for chunk in chunks})
+
+    def get_parent_chunk(self, chunk_id: str) -> ParentChunk | None:
+        return self._parent_chunks.get(chunk_id)
+
+    def list_parent_chunks(self, document_ids: list[str] | None = None) -> list[ParentChunk]:
+        allowed_ids = None if document_ids is None else set(document_ids)
+        return [
+            chunk
+            for chunk in self._parent_chunks.values()
+            if allowed_ids is None or chunk.document_id in allowed_ids
+        ]
+
+    def list_child_chunks(self, document_ids: list[str] | None = None) -> list[ChildChunk]:
+        allowed_ids = None if document_ids is None else set(document_ids)
+        return [
+            chunk
+            for chunk in self._child_chunks.values()
+            if allowed_ids is None or chunk.document_id in allowed_ids
+        ]
