@@ -1,5 +1,7 @@
 from pathlib import Path
 
+import pytest
+
 from rag_agent_platform.bootstrap import build_service_container
 from rag_agent_platform.config import Settings
 from rag_agent_platform.llm import build_chat_model
@@ -78,3 +80,17 @@ def test_real_container_reports_missing_embedding_credentials_clearly(tmp_path: 
         assert "EMBEDDING_MODEL is required" in str(exc)
     else:
         raise AssertionError("missing configured embedding credentials must fail")
+
+
+def test_configuration_errors_do_not_expose_api_keys() -> None:
+    secret = "test-secret-that-must-not-appear"
+    config = Settings(
+        _env_file=None,
+        llm_provider="unsupported-provider",
+        llm_api_key=secret,
+    )
+
+    with pytest.raises(ValueError) as error:
+        build_chat_model(config)
+
+    assert secret not in str(error.value)

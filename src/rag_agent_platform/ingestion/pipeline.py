@@ -2,14 +2,30 @@
 
 from hashlib import sha256
 from pathlib import Path
-from typing import Any
+from typing import Protocol
 
 from rag_agent_platform.ingestion.base import IngestionPipeline
 from rag_agent_platform.ingestion.chunker import ParentChildChunker
 from rag_agent_platform.ingestion.cleaner import TextCleaner
 from rag_agent_platform.ingestion.loaders import LoaderRegistry, build_default_loader_registry
-from rag_agent_platform.models import DocumentRecord, IngestionResult
+from rag_agent_platform.models import ChildChunk, DocumentRecord, IngestionResult
 from rag_agent_platform.storage.base import DocumentRepository
+
+
+class ChildChunkVectorStore(Protocol):
+    """Vector capabilities required by the ingestion application service."""
+
+    def upsert_child_chunks(self, chunks: list[ChildChunk]) -> None:
+        """Persist or replace child-chunk vectors."""
+        ...
+
+    def delete_document(self, document_id: str) -> None:
+        """Delete all vectors for one document."""
+        ...
+
+    def count(self, document_id: str | None = None) -> int:
+        """Count all vectors or vectors belonging to one document."""
+        ...
 
 
 class RealIngestionPipeline(IngestionPipeline):
@@ -18,19 +34,15 @@ class RealIngestionPipeline(IngestionPipeline):
     def __init__(
         self,
         *,
+        repository: DocumentRepository,
         loader_registry: LoaderRegistry | None = None,
         cleaner: TextCleaner | None = None,
         chunker: ParentChildChunker | None = None,
-        repository: DocumentRepository | None = None,
-        vector_store: Any | None = None,
+        vector_store: ChildChunkVectorStore | None = None,
     ) -> None:
         self._loader_registry = loader_registry or build_default_loader_registry()
         self._cleaner = cleaner or TextCleaner()
         self._chunker = chunker or ParentChildChunker()
-        if repository is None:
-            from rag_agent_platform.storage.file_repository import FileDocumentRepository
-
-            repository = FileDocumentRepository()
         self._repository = repository
         self._vector_store = vector_store
 

@@ -323,10 +323,12 @@ invoke(
 `ParentContextRetriever` 根据 `parent_id` 从 Repository 读取父块，保留命中的 child `chunk_id`、
 分数和 metadata，并把原子块文本写入 `metadata["matched_child_content"]`。
 
-## ServiceContainer
+## ApplicationServices / ServiceContainer
 
-`rag_agent_platform.bootstrap.build_service_container(settings)` 集中创建 Settings、Repository、
-Ingestion、Chroma、Naive、Advanced、Graph、ChatModel、Generator、Evaluator 和 Agent。默认
+`rag_agent_platform.bootstrap.build_application_services(settings)` 集中创建 Settings、Repository、
+Ingestion、Chroma、Naive、Advanced、Graph、ChatModel、Generator、Evaluator 和 Agent，并返回
+显式暴露这些依赖的 `ApplicationServices`。`ServiceContainer` 与 `build_service_container()` 是
+向后兼容别名。默认
 `APP_MODE=real`；未配置 LLM 返回本地 grounded 组件，不等于 Mock。配置错误会抛出明确异常。
 
 ## 异常处理

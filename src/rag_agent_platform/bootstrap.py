@@ -8,7 +8,9 @@ from rag_agent_platform.agent.router import BoundedQueryRewriter, StructuredQuer
 from rag_agent_platform.config import Settings, settings
 from rag_agent_platform.embeddings import build_embedding_model
 from rag_agent_platform.evaluation import GroundedAnswerEvaluator
+from rag_agent_platform.evaluation.base import AnswerEvaluator
 from rag_agent_platform.generation import GroundedAnswerGenerator
+from rag_agent_platform.generation.base import AnswerGenerator
 from rag_agent_platform.graph import GraphRetriever, MockTripletExtractor, NetworkXGraphService
 from rag_agent_platform.ingestion import (
     CoordinatedIngestionPipeline,
@@ -31,6 +33,7 @@ from rag_agent_platform.retrieval import (
     SentenceContextCompressor,
     TokenOverlapReranker,
 )
+from rag_agent_platform.retrieval.base import BaseRetriever
 from rag_agent_platform.storage import (
     ChromaDenseSearchBackend,
     ChromaVectorStore,
@@ -42,18 +45,26 @@ from rag_agent_platform.storage import (
 
 
 @dataclass(slots=True)
-class ServiceContainer:
-    """Stable object graph cached by the Streamlit process."""
+class ApplicationServices:
+    """Complete injected object graph cached by the Streamlit process."""
 
     settings: Settings
     ingestion: IngestionPipeline
     repository: DocumentRepository
+    naive_retriever: BaseRetriever
+    advanced_retriever: BaseRetriever
+    graph_retriever: BaseRetriever
+    generator: AnswerGenerator
+    evaluator: AnswerEvaluator
     agent: AgentService
     app_mode: str
     llm_configured: bool
 
 
-def build_service_container(config: Settings | None = None) -> ServiceContainer:
+ServiceContainer = ApplicationServices
+
+
+def build_application_services(config: Settings | None = None) -> ApplicationServices:
     """Build all long-lived services once, with no silent Mock fallback."""
     active_settings = config or settings
     app_mode = active_settings.app_mode.strip().lower()
@@ -64,7 +75,12 @@ def build_service_container(config: Settings | None = None) -> ServiceContainer:
     return _build_real_container(active_settings)
 
 
-def _build_real_container(config: Settings) -> ServiceContainer:
+def build_service_container(config: Settings | None = None) -> ApplicationServices:
+    """Backward-compatible alias for the canonical application-services builder."""
+    return build_application_services(config)
+
+
+def _build_real_container(config: Settings) -> ApplicationServices:
     repository = build_document_repository(config)
     embedding_model = build_embedding_model(config)
     vector_store = ChromaVectorStore(
@@ -124,28 +140,43 @@ def _build_real_container(config: Settings) -> ServiceContainer:
         top_k=config.retrieval_top_k,
         max_retries=config.agent_max_retries,
     )
-    return ServiceContainer(
+    return ApplicationServices(
         settings=config,
         ingestion=ingestion,
         repository=repository,
+        naive_retriever=naive,
+        advanced_retriever=advanced,
+        graph_retriever=graph_retriever,
+        generator=generator,
+        evaluator=evaluator,
         agent=agent,
         app_mode="real",
         llm_configured=chat_model is not None,
     )
 
 
-def _build_mock_container(config: Settings) -> ServiceContainer:
+def _build_mock_container(config: Settings) -> ApplicationServices:
     repository = MockDocumentRepository()
     ingestion = MockIngestionPipeline(repository)
+    naive_retriever = MockRetriever(retrieval_method="naive")
+    advanced_retriever = MockRetriever(retrieval_method="advanced")
+    graph_retriever = MockRetriever(retrieval_method="graph")
+    generator = GroundedAnswerGenerator()
+    evaluator = GroundedAnswerEvaluator()
     agent = MockAgentService(
-        naive_retriever=MockRetriever(retrieval_method="naive"),
-        advanced_retriever=MockRetriever(retrieval_method="advanced"),
-        graph_retriever=MockRetriever(retrieval_method="graph"),
+        naive_retriever=naive_retriever,
+        advanced_retriever=advanced_retriever,
+        graph_retriever=graph_retriever,
     )
-    return ServiceContainer(
+    return ApplicationServices(
         settings=config,
         ingestion=ingestion,
         repository=repository,
+        naive_retriever=naive_retriever,
+        advanced_retriever=advanced_retriever,
+        graph_retriever=graph_retriever,
+        generator=generator,
+        evaluator=evaluator,
         agent=agent,
         app_mode="mock",
         llm_configured=False,

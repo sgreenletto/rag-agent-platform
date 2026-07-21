@@ -27,9 +27,13 @@ Agentic RAG 与 Streamlit。后续变更必须保持公共契约与真实闭环�
 - 不得提交真实密钥、密码、上传文档、日志、数据库或模型权重；
 - 正式页面默认使用 `APP_MODE=real`，不得在真实服务失败时静默降级为 Mock；
 - Streamlit 长生命周期资源使用 `st.cache_resource`，不得在组件内重复创建 Chroma 或模型；
-- 不得自行执行 `git commit` 或 `git push`，也不得执行破坏性 Git 命令；
+- 遵守 package 分层：上层优先依赖接口，UI 不穿透基础设施，Agent 节点不创建具体服务，
+  所有具体依赖只在 `bootstrap.py` 集中装配；
+- 新功能和缺陷修复优先先写可观察行为测试，确认失败后完成最小实现，再重构；
+- 不得自行执行 `git commit`、`git push` 或 `git tag`，也不得执行破坏性 Git 命令；
 - 修改前先检查目录、相关文件和 `git status`，保留无关的用户变更；
-- 完成后报告修改文件、执行命令、测试结果和仍未实现的真实能力。
+- 完成后运行完整 compileall、Ruff、pytest 与必要的 Streamlit 冒烟，并报告修改文件、执行命令、
+  测试结果和仍未实现的真实能力。
 
 ## 常用命令
 

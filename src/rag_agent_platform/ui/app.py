@@ -2,7 +2,7 @@
 
 import streamlit as st
 
-from rag_agent_platform.bootstrap import ServiceContainer, build_service_container
+from rag_agent_platform.bootstrap import ApplicationServices, build_application_services
 from rag_agent_platform.ui.components import (
     render_agent_result,
     render_chat_history,
@@ -12,9 +12,9 @@ from rag_agent_platform.ui.session import initialize_session_state
 
 
 @st.cache_resource
-def build_services() -> ServiceContainer:
+def build_services() -> ApplicationServices:
     """Create and cache heavyweight storage, embedding and graph resources."""
-    return build_service_container()
+    return build_application_services()
 
 
 def run_app() -> None:
