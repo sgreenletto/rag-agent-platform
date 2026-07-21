@@ -7,6 +7,7 @@ from rag_agent_platform.retrieval.compression import (
     ContextCompressor,
     SentenceContextCompressor,
 )
+from rag_agent_platform.retrieval.config import RetrievalParameters
 from rag_agent_platform.retrieval.corpus import ChunkCorpus
 from rag_agent_platform.retrieval.dense import DenseRetriever, DenseSearchBackend, DenseSearchHit
 from rag_agent_platform.retrieval.fusion import reciprocal_rank_fusion
@@ -45,6 +46,7 @@ __all__ = [
     "ParentContextRetriever",
     "QueryTransformer",
     "RelevanceThreshold",
+    "RetrievalParameters",
     "RerankingRetriever",
     "SentenceContextCompressor",
     "ThresholdRetriever",

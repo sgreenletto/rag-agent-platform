@@ -41,6 +41,9 @@ def test_dense_similarity_normalizes_and_forwards_backend_filters() -> None:
     assert [item.chunk_id for item in result] == ["b"]
     assert result[0].normalized_score == 1.0
     assert result[0].metadata["dense_score"] == 0.9
+    assert result[0].metadata["raw_score"] == 0.9
+    assert result[0].metadata["score_type"] == "similarity"
+    assert result[0].metadata["normalized_score"] == 1.0
     assert backend.last_call == ("年假", ["doc-1"], 3)
 
 
@@ -88,3 +91,18 @@ def test_single_distance_candidate_normalizes_consistently() -> None:
     result = DenseRetriever(backend, score_kind="distance", score_threshold=0.5).retrieve("query")
 
     assert result[0].normalized_score == 1.0
+
+
+def test_dense_explicit_candidate_k_overrides_multiplier() -> None:
+    backend = FakeDenseBackend([hit("a", "doc", 0.9)])
+
+    DenseRetriever(backend, candidate_multiplier=9, candidate_k=7).retrieve("query", top_k=5)
+
+    assert backend.last_call == ("query", None, 7)
+
+
+def test_dense_rejects_candidate_k_smaller_than_requested_top_k() -> None:
+    retriever = DenseRetriever(FakeDenseBackend([]), candidate_k=2)
+
+    with pytest.raises(ValueError, match="candidate_k"):
+        retriever.retrieve("query", top_k=3)

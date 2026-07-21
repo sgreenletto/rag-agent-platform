@@ -21,6 +21,8 @@ class HybridRetriever(BaseRetriever):
         sparse_weight: float = 1.0,
         rrf_k: int = 60,
         candidate_multiplier: int = 3,
+        dense_candidate_k: int | None = None,
+        bm25_candidate_k: int | None = None,
         failure_mode: Literal["fallback", "raise"] = "fallback",
     ) -> None:
         if dense_weight <= 0 or sparse_weight <= 0:
@@ -29,12 +31,17 @@ class HybridRetriever(BaseRetriever):
             raise ValueError("rrf_k must be greater than 0")
         if candidate_multiplier <= 0:
             raise ValueError("candidate_multiplier must be greater than 0")
+        if dense_candidate_k is not None and dense_candidate_k <= 0:
+            raise ValueError("dense_candidate_k must be greater than 0")
+        if bm25_candidate_k is not None and bm25_candidate_k <= 0:
+            raise ValueError("bm25_candidate_k must be greater than 0")
         if failure_mode not in {"fallback", "raise"}:
             raise ValueError("failure_mode must be 'fallback' or 'raise'")
         self._retrievers = {"dense": dense_retriever, "sparse": sparse_retriever}
         self._weights = {"dense": dense_weight, "sparse": sparse_weight}
         self._rrf_k = rrf_k
         self._candidate_multiplier = candidate_multiplier
+        self._candidate_ks = {"dense": dense_candidate_k, "sparse": bm25_candidate_k}
         self._failure_mode = failure_mode
 
     def retrieve(
@@ -44,11 +51,13 @@ class HybridRetriever(BaseRetriever):
         top_k: int = 5,
     ) -> list[RetrievedChunk]:
         normalized_query = validate_retrieval_request(query, top_k)
-        candidate_k = top_k * self._candidate_multiplier
         ranked_results: dict[str, list[RetrievedChunk]] = {}
         errors: dict[str, str] = {}
 
         for name, retriever in self._retrievers.items():
+            candidate_k = self._candidate_ks[name] or top_k * self._candidate_multiplier
+            if candidate_k < top_k:
+                raise ValueError(f"{name}_candidate_k must be greater than or equal to top_k")
             try:
                 ranked_results[name] = retriever.retrieve(
                     normalized_query,

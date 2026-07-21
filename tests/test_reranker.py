@@ -139,3 +139,13 @@ def test_reranking_retriever_rejects_injected_evidence() -> None:
 
     with pytest.raises(ValueError, match="unknown chunk_id"):
         retriever.retrieve("query")
+
+
+def test_rerank_top_k_caps_explicit_output_without_changing_recall_size() -> None:
+    base = RecordingRetriever([result("a", "a", 1.0), result("b", "b", 0.8), result("c", "c", 0.6)])
+    retriever = RerankingRetriever(base, ReverseReranker(), candidate_multiplier=3, rerank_top_k=2)
+
+    reranked = retriever.retrieve("query", top_k=3)
+
+    assert base.top_k == 9
+    assert len(reranked) == 2

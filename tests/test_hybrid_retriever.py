@@ -79,3 +79,20 @@ def test_hybrid_strict_mode_propagates_failure() -> None:
 
     with pytest.raises(ConnectionError, match="backend unavailable"):
         retriever.retrieve("query")
+
+
+def test_hybrid_uses_distinct_explicit_candidate_counts() -> None:
+    dense = RecordingRetriever([])
+    sparse = RecordingRetriever([])
+    retriever = HybridRetriever(dense, sparse, dense_candidate_k=9, bm25_candidate_k=7)
+
+    assert retriever.retrieve("query", document_ids=["doc"], top_k=5) == []
+    assert dense.calls == [("query", ["doc"], 9)]
+    assert sparse.calls == [("query", ["doc"], 7)]
+
+
+def test_hybrid_rejects_candidate_count_below_requested_top_k() -> None:
+    retriever = HybridRetriever(RecordingRetriever([]), RecordingRetriever([]), dense_candidate_k=2)
+
+    with pytest.raises(ValueError, match="dense_candidate_k"):
+        retriever.retrieve("query", top_k=3)

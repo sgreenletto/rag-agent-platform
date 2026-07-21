@@ -52,6 +52,7 @@ class DenseRetriever(BaseRetriever):
         score_kind: Literal["similarity", "distance"] = "similarity",
         score_threshold: float = 0.0,
         candidate_multiplier: int = 2,
+        candidate_k: int | None = None,
     ) -> None:
         if score_kind not in {"similarity", "distance"}:
             raise ValueError("score_kind must be 'similarity' or 'distance'")
@@ -59,10 +60,13 @@ class DenseRetriever(BaseRetriever):
             raise ValueError("score_threshold must be between 0.0 and 1.0")
         if candidate_multiplier <= 0:
             raise ValueError("candidate_multiplier must be greater than 0")
+        if candidate_k is not None and candidate_k <= 0:
+            raise ValueError("candidate_k must be greater than 0")
         self._backend = backend
         self._score_kind = score_kind
         self._score_threshold = score_threshold
         self._candidate_multiplier = candidate_multiplier
+        self._candidate_k = candidate_k
 
     def retrieve(
         self,
@@ -71,7 +75,9 @@ class DenseRetriever(BaseRetriever):
         top_k: int = 5,
     ) -> list[RetrievedChunk]:
         normalized_query = validate_retrieval_request(query, top_k)
-        candidate_limit = top_k * self._candidate_multiplier
+        candidate_limit = self._candidate_k or top_k * self._candidate_multiplier
+        if candidate_limit < top_k:
+            raise ValueError("candidate_k must be greater than or equal to top_k")
         hits = self._backend.search(
             normalized_query,
             document_ids,
@@ -93,6 +99,9 @@ class DenseRetriever(BaseRetriever):
         metadata.update(hit.metadata)
         metadata["dense_score"] = hit.score
         metadata["dense_score_kind"] = self._score_kind
+        metadata["raw_score"] = hit.score
+        metadata["score_type"] = self._score_kind
+        metadata["normalized_score"] = normalized_score
         return RetrievedChunk(
             chunk_id=hit.chunk.chunk_id,
             content=hit.chunk.content,

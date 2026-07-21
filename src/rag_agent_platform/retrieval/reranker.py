@@ -83,12 +83,16 @@ class RerankingRetriever(BaseRetriever):
         reranker: BaseReranker,
         *,
         candidate_multiplier: int = 4,
+        rerank_top_k: int | None = None,
     ) -> None:
         if candidate_multiplier <= 0:
             raise ValueError("candidate_multiplier must be greater than 0")
+        if rerank_top_k is not None and rerank_top_k <= 0:
+            raise ValueError("rerank_top_k must be greater than 0")
         self._retriever = retriever
         self._reranker = reranker
         self._candidate_multiplier = candidate_multiplier
+        self._rerank_top_k = rerank_top_k
 
     def retrieve(
         self,
@@ -97,6 +101,7 @@ class RerankingRetriever(BaseRetriever):
         top_k: int = 5,
     ) -> list[RetrievedChunk]:
         normalized_query = validate_retrieval_request(query, top_k)
+        result_top_k = min(top_k, self._rerank_top_k) if self._rerank_top_k else top_k
         candidate_k = top_k * self._candidate_multiplier
         candidates = self._retriever.retrieve(
             normalized_query,
@@ -104,6 +109,6 @@ class RerankingRetriever(BaseRetriever):
             top_k=candidate_k,
         )
         candidates = finalize_results(candidates, document_ids, candidate_k)
-        reranked = self._reranker.rerank(normalized_query, candidates, top_k)
+        reranked = self._reranker.rerank(normalized_query, candidates, result_top_k)
         reranked = validate_transformed_results(candidates, reranked, "reranker")
-        return finalize_results(reranked, document_ids, top_k)
+        return finalize_results(reranked, document_ids, result_top_k)

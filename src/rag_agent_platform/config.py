@@ -27,6 +27,10 @@ class Settings(BaseSettings):
     graph_persist_directory: str = "data/graph"
     upload_directory: str = "data/uploads"
     retrieval_top_k: int = 5
+    dense_candidate_k: int = 20
+    bm25_candidate_k: int = 20
+    rerank_top_k: int = 5
+    retrieval_score_threshold: float = 0.0
     agent_max_retries: int = 2
     hash_embedding_dimensions: int = 32
 
