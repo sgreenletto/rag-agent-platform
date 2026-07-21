@@ -3,6 +3,8 @@
 from hashlib import sha256
 from math import sqrt
 
+from rag_agent_platform.embeddings.base import EmbeddingIdentity
+
 
 class HashEmbeddingModel:
     """Generate stable normalized vectors without downloading a model."""
@@ -11,6 +13,15 @@ class HashEmbeddingModel:
         if dimensions <= 0:
             raise ValueError("dimensions must be greater than 0")
         self._dimensions = dimensions
+
+    @property
+    def identity(self) -> EmbeddingIdentity:
+        """Return the local model identity used by Chroma metadata checks."""
+        return EmbeddingIdentity(
+            provider="hash",
+            model="hash",
+            dimensions=self._dimensions,
+        )
 
     def embed_texts(self, texts: list[str]) -> list[list[float]]:
         """Return deterministic vectors for the provided texts."""

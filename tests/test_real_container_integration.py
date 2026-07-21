@@ -60,3 +60,21 @@ def test_configured_llm_reports_missing_credentials_clearly() -> None:
         assert "LLM_MODEL is required" in str(exc)
     else:
         raise AssertionError("missing configured LLM credentials must fail")
+
+
+def test_real_container_reports_missing_embedding_credentials_clearly(tmp_path: Path) -> None:
+    config = Settings(
+        _env_file=None,
+        app_mode="real",
+        embedding_provider="siliconflow",
+        metadata_path=str(tmp_path / "metadata" / "documents.json"),
+        chroma_persist_directory=str(tmp_path / "chroma"),
+        graph_persist_directory=str(tmp_path / "graph"),
+    )
+
+    try:
+        build_service_container(config)
+    except ValueError as exc:
+        assert "EMBEDDING_MODEL is required" in str(exc)
+    else:
+        raise AssertionError("missing configured embedding credentials must fail")
