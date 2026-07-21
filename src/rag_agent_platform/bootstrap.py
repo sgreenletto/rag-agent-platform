@@ -6,7 +6,7 @@ from pathlib import Path
 from rag_agent_platform.agent import AgentService, LangGraphAgentService, MockAgentService
 from rag_agent_platform.agent.router import BoundedQueryRewriter, StructuredQueryAnalyzer
 from rag_agent_platform.config import Settings, settings
-from rag_agent_platform.embeddings import HashEmbeddingModel
+from rag_agent_platform.embeddings import build_embedding_model
 from rag_agent_platform.evaluation import GroundedAnswerEvaluator
 from rag_agent_platform.generation import GroundedAnswerGenerator
 from rag_agent_platform.graph import GraphRetriever, MockTripletExtractor, NetworkXGraphService
@@ -35,9 +35,9 @@ from rag_agent_platform.storage import (
     ChromaDenseSearchBackend,
     ChromaVectorStore,
     DocumentRepository,
-    FileDocumentRepository,
     MockDocumentRepository,
     RepositoryChunkCorpus,
+    build_document_repository,
 )
 
 
@@ -65,14 +65,8 @@ def build_service_container(config: Settings | None = None) -> ServiceContainer:
 
 
 def _build_real_container(config: Settings) -> ServiceContainer:
-    embedding_provider = config.embedding_provider.strip().lower()
-    if embedding_provider not in {"", "hash", "local"}:
-        raise ValueError(
-            f"unsupported EMBEDDING_PROVIDER '{config.embedding_provider}'; "
-            "this version supports the local hash embedding adapter"
-        )
-    repository = FileDocumentRepository(config.metadata_path)
-    embedding_model = HashEmbeddingModel(config.hash_embedding_dimensions)
+    repository = build_document_repository(config)
+    embedding_model = build_embedding_model(config)
     vector_store = ChromaVectorStore(
         persist_directory=config.chroma_persist_directory,
         collection_name=config.chroma_collection_name,

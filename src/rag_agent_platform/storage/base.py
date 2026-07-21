@@ -37,3 +37,18 @@ class DocumentRepository(ABC):
     def save_child_chunks(self, chunks: list[ChildChunk]) -> None:
         """Persist child chunks."""
         raise NotImplementedError
+
+    @abstractmethod
+    def get_parent_chunk(self, chunk_id: str) -> ParentChunk | None:
+        """Return one parent chunk, or None when it does not exist."""
+        raise NotImplementedError
+
+    @abstractmethod
+    def list_parent_chunks(self, document_ids: list[str] | None = None) -> list[ParentChunk]:
+        """Return parent chunks, optionally filtered by document IDs."""
+        raise NotImplementedError
+
+    @abstractmethod
+    def list_child_chunks(self, document_ids: list[str] | None = None) -> list[ChildChunk]:
+        """Return child chunks, optionally filtered by document IDs."""
+        raise NotImplementedError

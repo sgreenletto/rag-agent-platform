@@ -4,14 +4,18 @@ import sys
 from argparse import ArgumentParser, Namespace
 from tempfile import TemporaryDirectory
 
-from rag_agent_platform.embeddings import HashEmbeddingModel
+from rag_agent_platform.config import settings
+from rag_agent_platform.embeddings import build_embedding_model
 from rag_agent_platform.ingestion.chunker import ChunkingConfig, ParentChildChunker
 from rag_agent_platform.ingestion.cleaner import TextCleaner
 from rag_agent_platform.ingestion.loaders import build_default_loader_registry
 from rag_agent_platform.ingestion.pipeline import RealIngestionPipeline
 from rag_agent_platform.models import ChildChunk, DocumentRecord, ParentChunk
-from rag_agent_platform.storage.chroma_store import ChromaVectorStore
-from rag_agent_platform.storage.file_repository import FileDocumentRepository
+from rag_agent_platform.storage import (
+    ChromaVectorStore,
+    FileDocumentRepository,
+    build_document_repository,
+)
 
 
 def build_parser() -> ArgumentParser:
@@ -186,7 +190,7 @@ def run_chroma_smoke(*, content: str, filename: str, file_type: str) -> None:
         vector_store = ChromaVectorStore(
             persist_directory=temp_dir,
             collection_name="demo_child_chunks",
-            embedding_model=HashEmbeddingModel(dimensions=16),
+            embedding_model=build_embedding_model(settings),
         )
         vector_store.upsert_child_chunks(children)
         print(f"filename: {filename}")
@@ -219,7 +223,7 @@ def run_adapter_smoke(*, content: str, filename: str, file_type: str) -> None:
         vector_store = ChromaVectorStore(
             persist_directory=f"{temp_dir}/chroma",
             collection_name="adapter_child_chunks",
-            embedding_model=HashEmbeddingModel(dimensions=16),
+            embedding_model=build_embedding_model(settings),
         )
         vector_store.upsert_child_chunks(children)
         dense_backend = ChromaDenseSearchBackend(vector_store)
@@ -237,12 +241,14 @@ def run_adapter_smoke(*, content: str, filename: str, file_type: str) -> None:
 
 def build_real_pipeline() -> RealIngestionPipeline:
     """Build the default local ingestion pipeline used by this demo."""
+    repository = build_document_repository(settings)
     return RealIngestionPipeline(
+        repository=repository,
         vector_store=ChromaVectorStore(
-            persist_directory="data/chroma",
-            collection_name="rag_child_chunks",
-            embedding_model=HashEmbeddingModel(dimensions=16),
-        )
+            persist_directory=settings.chroma_persist_directory,
+            collection_name=settings.chroma_collection_name,
+            embedding_model=build_embedding_model(settings),
+        ),
     )
 
 

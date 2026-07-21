@@ -6,7 +6,7 @@ from typing import Any
 
 import chromadb
 
-from rag_agent_platform.embeddings import EmbeddingModel, HashEmbeddingModel
+from rag_agent_platform.embeddings import EmbeddingIdentity, EmbeddingModel, HashEmbeddingModel
 from rag_agent_platform.models import ChildChunk
 
 
@@ -33,11 +33,13 @@ class ChromaVectorStore:
         self._persist_directory.mkdir(parents=True, exist_ok=True)
         self._embedding_model = embedding_model or HashEmbeddingModel()
         self._client = chromadb.PersistentClient(path=str(self._persist_directory))
+        collection_metadata = self._collection_metadata(self._embedding_model.identity)
         self._collection = self._client.get_or_create_collection(
             name=collection_name,
             embedding_function=None,
-            metadata={"hnsw:space": "cosine"},
+            metadata=collection_metadata,
         )
+        self._ensure_embedding_compatible(collection_metadata)
 
     def upsert_child_chunks(self, chunks: list[ChildChunk]) -> None:
         """Embed and upsert child chunks."""
@@ -45,6 +47,7 @@ class ChromaVectorStore:
             return
         texts = [chunk.content for chunk in chunks]
         embeddings = self._embedding_model.embed_texts(texts)
+        self._ensure_embedding_compatible(self._collection_metadata(self._embedding_model.identity))
         self._collection.upsert(
             ids=[chunk.chunk_id for chunk in chunks],
             documents=texts,
@@ -75,6 +78,7 @@ class ChromaVectorStore:
         if document_ids == []:
             return []
         query_embedding = self._embedding_model.embed_texts([query])[0]
+        self._ensure_embedding_compatible(self._collection_metadata(self._embedding_model.identity))
         raw_result = self._collection.query(
             query_embeddings=[query_embedding],
             n_results=limit,
@@ -165,3 +169,45 @@ class ChromaVectorStore:
         if value is None:
             return ""
         return str(value)
+
+    @staticmethod
+    def _collection_metadata(identity: EmbeddingIdentity) -> dict[str, str | int]:
+        metadata = {"hnsw:space": "cosine"}
+        metadata.update(identity.as_metadata())
+        return metadata
+
+    def _ensure_embedding_compatible(self, expected: dict[str, str | int]) -> None:
+        actual = self._collection.metadata or {}
+        mismatches = {
+            key: (actual.get(key), expected_value)
+            for key, expected_value in expected.items()
+            if key != "hnsw:space"
+            and actual.get(key) is not None
+            and actual.get(key) != expected_value
+        }
+        if mismatches:
+            details = ", ".join(
+                f"{key}: existing={existing!r}, configured={configured!r}"
+                for key, (existing, configured) in mismatches.items()
+            )
+            raise RuntimeError(
+                "Chroma collection embedding configuration does not match current settings. "
+                f"{details}. Delete the old Chroma data and re-ingest documents."
+            )
+        missing_metadata = {
+            key: value
+            for key, value in expected.items()
+            if key != "hnsw:space" and actual.get(key) is None
+        }
+        if missing_metadata:
+            required_identity_keys = {"embedding_provider", "embedding_model"}
+            missing_required_identity = required_identity_keys.intersection(missing_metadata)
+            if missing_required_identity and int(self._collection.count()) > 0:
+                missing = ", ".join(sorted(missing_required_identity))
+                raise RuntimeError(
+                    "Chroma collection has existing vectors but no embedding configuration "
+                    f"metadata ({missing}). Delete the old Chroma data and re-ingest documents."
+                )
+            updated = {key: value for key, value in actual.items() if key != "hnsw:space"}
+            updated.update(missing_metadata)
+            self._collection.modify(metadata=updated)
