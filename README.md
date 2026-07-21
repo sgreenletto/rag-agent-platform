@@ -4,6 +4,10 @@ RAG Agent Platform 是一个采用标准 Python src-layout 的模块化智能文
 真实文档入库、Naive/Advanced/Graph 检索、LangGraph Agent、回答生成/评估/重写循环和
 Streamlit 页面装配为一个可运行闭环；所有检索模式统一输出 `list[RetrievedChunk]`。
 
+项目面向企业内部文档查询、课程方案评审与知识库演示维护，目标是在一个可安装、可测试的
+Python package 中比较四类 RAG 工作流，而不是建设生产级多租户知识平台。当前包版本为
+`0.5.0`；版本状态以 `pyproject.toml`、`CHANGELOG.md` 与实际 Git tag 共同为准。
+
 ## 已实现能力
 
 - TXT、Markdown、PDF、DOCX 解析、清洗与父子切块；
@@ -35,8 +39,16 @@ Streamlit
 ```
 
 根目录 `app.py` 是唯一 Streamlit 入口，长生命周期对象统一由
-`rag_agent_platform.bootstrap.build_service_container()` 创建，并通过 `st.cache_resource`
+`rag_agent_platform.bootstrap.build_application_services()` 创建，并通过 `st.cache_resource`
 跨 rerun 复用。
+
+## 分层与依赖注入
+
+`models` 提供稳定数据契约；`ingestion`、`retrieval`、`graph`、`generation`、`evaluation`
+实现领域能力；`agent` 只编排这些接口；`ui` 只调用应用服务。具体 Repository、Chroma、图服务、
+Retriever、Generator、Evaluator 和 Agent 只在 `bootstrap.py` 中装配。业务服务采用构造函数注入，
+测试可使用 Fake/Mock 替换外部依赖。UI 不直接操作数据库或向量库，Agent 节点不创建连接或模型。
+详细依赖规则见 `docs/architecture.md` 与 `docs/engineering-practice.md`。
 
 ## 环境配置
 
@@ -89,6 +101,23 @@ uv run pytest -q
 ```
 
 检索离线评估格式与指标见 `docs/retrieval-evaluation.md`。
+
+GitHub Actions 会在向 `main`、`develop` push 或提交 Pull Request 时使用 Python 3.12 和
+`uv sync --frozen` 运行同一组检查。默认 CI 使用 Fake/本地组件，不要求真实 LLM API、MySQL 或
+用户文档。
+
+## MVP、分支与发布
+
+项目按工程骨架、Naive、Advanced、GraphRAG、Agentic RAG 和 Release 1.0 逐步演进；真实状态与
+验收条件见 `docs/mvp-plan.md`。开发遵循 `feature/* → develop → main`，每一级合并前必须通过 CI。
+版本采用 `MAJOR.MINOR.PATCH`；tag 只能由组长在与版本号一致、已经验证的稳定提交上创建，不能
+移动已有 tag。未发布变更记录在 `CHANGELOG.md`，发布说明使用 `docs/release-template.md`。
+
+## 项目边界
+
+当前不提供多用户认证与复杂权限、云端分布式部署、Redis/大规模向量数据库集群、Embedding
+微调、完整微软 GraphRAG、复杂 OCR、跨页表格重建、生产监控告警、高可用或灾备。可验证需求、
+非功能约束和完整排除项见 `docs/requirements.md`。
 
 ## 当前限制
 

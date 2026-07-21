@@ -7,6 +7,15 @@
 - 所有 `feature/*` 必须从最新的 `develop` 创建；
 - 功能完成后发起 Pull Request，目标分支必须是 `develop`；
 - 只有通过完整检查的 `develop` 才能合并到 `main`。
+- Pull Request 必须指向上述下一层分支，不允许绕过 `develop` 直接把功能分支合入 `main`；
+- Git tag 只能由组长在 `main` 的稳定、已验证提交上创建，其他成员不得自行创建或移动 tag。
+
+## TDD 推荐流程
+
+新增或修复关键行为时采用 Red → Green → Refactor：先写能够复现缺失行为的最小测试并确认失败，
+再完成让测试通过的最小实现，最后在测试保护下消除重复和改善结构。历史模块存在实现后补测的
+情况，因此不得宣称整个项目历史完全采用 TDD；但新行为必须优先补充行为测试，避免只测 Mock
+调用次数而不验证边界和真实适配逻辑。
 
 ## 提交格式
 
@@ -25,6 +34,9 @@ uv run ruff format --check .
 uv run ruff check .
 uv run pytest -q
 ```
+
+本地检查和 GitHub Actions CI 必须全部通过；不得用跳过、忽略退出码或伪造外部服务结果使 CI
+静默成功。依赖真实外部服务的测试必须显式标记，并与默认离线测试隔离。
 
 还需手动启动：
 
@@ -59,6 +71,8 @@ uv run streamlit run app.py
 - 新模块放在 `src/rag_agent_platform/`，不要把 `src` 当成 Python 包；
 - 新增依赖必须与当前功能直接相关，并同步更新 `pyproject.toml` 与 `uv.lock`。
 - 服务构造统一放在 `rag_agent_platform.bootstrap`；UI、节点和 Retriever 内不得各自初始化 Provider。
+- 上层模块优先依赖抽象接口并使用构造函数注入；禁止 UI 穿透到 Chroma/MySQL，也禁止 Agent
+  节点直接操作数据库、图存储或 Streamlit 状态。
 
 ## 真实与 Mock 模式
 

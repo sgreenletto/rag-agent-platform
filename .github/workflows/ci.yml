@@ -1,0 +1,49 @@
+name: CI
+
+on:
+  push:
+    branches:
+      - main
+      - develop
+  pull_request:
+    branches:
+      - main
+      - develop
+
+permissions:
+  contents: read
+
+jobs:
+  quality:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      APP_MODE: mock
+      LLM_PROVIDER: ""
+      LLM_API_KEY: ""
+      EMBEDDING_PROVIDER: hash
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install uv and Python
+        uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+          python-version: "3.12"
+
+      - name: Sync frozen dependencies
+        run: uv sync --frozen
+
+      - name: Compile package and tests
+        run: uv run python -m compileall src tests app.py
+
+      - name: Check formatting
+        run: uv run ruff format --check .
+
+      - name: Lint
+        run: uv run ruff check .
+
+      - name: Test
+        run: uv run pytest -q

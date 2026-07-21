@@ -3,12 +3,45 @@
 项目采用标准 src-layout，正式包为 `rag_agent_platform`。根 `app.py` 只调用 UI，服务构造集中在
 `bootstrap.py`，Streamlit 用 `st.cache_resource` 避免重复加载 Chroma、Embedding、图和 Agent。
 
+## 分层与允许依赖方向
+
+```text
+app.py
+  → ui
+      → ApplicationServices / ingestion 与 agent 接口
+          → agent
+              → BaseRetriever / AnswerGenerator / AnswerEvaluator
+          → ingestion
+              → DocumentRepository / VectorStore / GraphService
+          → retrieval / graph
+              → storage 与向量/图抽象
+                  → Chroma / NetworkX / 文件 Repository 等基础设施实现
+
+models → 标准库或稳定基础依赖
+```
+
+依赖箭头只能由上层指向接口或下一层能力。`models` 不反向依赖业务包；`retrieval` 不读取
+Streamlit Session State；`ingestion` 不依赖 UI 或 Agent。`ApplicationServices` 是应用级依赖集合，
+`build_application_services()` 是唯一生产装配入口；旧 `ServiceContainer` 与
+`build_service_container()` 保留为向后兼容别名。
+
+## 禁止穿透
+
+- UI 不直接创建或操作 Chroma、MySQL、Embedding、BM25 或具体 Retriever；
+- Agent 不直接访问数据库、NetworkX、Chroma 或 Streamlit；
+- Agent 节点内部不创建 ChatModel、Retriever、数据库或持久连接；
+- 上层业务模块不绕过接口依赖具体基础设施；
+- 不在多个模块重复装配同一模型、连接或服务图。
+
+上述规则由 `tests/test_architecture_boundaries.py` 的轻量源码扫描保护。具体实现只允许在
+`bootstrap.py` 组合，或者留在它所属的基础设施模块内部。
+
 ## 运行链路
 
 ```text
 Streamlit UI
     ↓
-ServiceContainer
+ApplicationServices
     ├─ CoordinatedIngestionPipeline
     │   ├─ RealIngestionPipeline → Loader/Cleaner/ParentChildChunker
     │   ├─ FileDocumentRepository

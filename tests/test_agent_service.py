@@ -231,3 +231,21 @@ def test_invalid_mode_fails_fast() -> None:
 
     with pytest.raises(ValueError, match="unsupported mode"):
         service.invoke("年假", mode="unsupported")
+
+
+def test_agent_enforces_selected_document_scope() -> None:
+    other_document = RetrievedChunk(
+        chunk_id="chunk-2",
+        content="不属于当前选择范围的内容。",
+        normalized_score=1.0,
+        source="other.txt",
+        document_id="doc-2",
+        retrieval_method="fake",
+    )
+    retriever = RecordingRetriever([other_document, evidence()])
+    service, _, _, _ = build_agent(naive=retriever)
+
+    result = service.invoke("年假", ["doc-1"], "naive")
+
+    assert retriever.calls == [("年假", ["doc-1"], 3)]
+    assert [chunk.document_id for chunk in result.retrieved_chunks] == ["doc-1"]
