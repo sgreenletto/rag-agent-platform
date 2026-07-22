@@ -110,3 +110,8 @@ class AgentResult:
     execution_trace: list[str] = field(default_factory=list)
     retrieved_chunks: list[RetrievedChunk] = field(default_factory=list)
     error: str | None = None
+    regenerate_count: int = 0
+    refused: bool = False
+    evaluation_decision: str | None = None
+    query_history: list[str] = field(default_factory=list)
+    strategy_history: list[RetrievalStrategy] = field(default_factory=list)

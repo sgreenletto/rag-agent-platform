@@ -85,12 +85,12 @@ def test_dense_empty_document_scope_cannot_leak_backend_results() -> None:
     assert DenseRetriever(backend).retrieve("query", document_ids=[]) == []
 
 
-def test_single_distance_candidate_normalizes_consistently() -> None:
+def test_single_distance_candidate_uses_absolute_distance_confidence() -> None:
     backend = FakeDenseBackend([hit("only", "doc", 0.7)])
 
     result = DenseRetriever(backend, score_kind="distance", score_threshold=0.5).retrieve("query")
 
-    assert result[0].normalized_score == 1.0
+    assert result[0].normalized_score == pytest.approx(1.0 / 1.7)
 
 
 def test_dense_explicit_candidate_k_overrides_multiplier() -> None:

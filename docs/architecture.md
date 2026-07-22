@@ -1,98 +1,96 @@
 # 项目架构
 
-项目采用标准 src-layout，正式包为 `rag_agent_platform`。根 `app.py` 只调用 UI，服务构造集中在
-`bootstrap.py`，Streamlit 用 `st.cache_resource` 避免重复加载 Chroma、Embedding、图和 Agent。
+当前架构基线：`v1.0.0` 最终课程交付。
 
-## 分层与允许依赖方向
+项目采用标准 src-layout，正式包是 `rag_agent_platform`。根 `app.py` 只进入 UI；
+`bootstrap.build_application_services()` 是生产 Composition Root，Streamlit 通过
+`st.cache_resource` 缓存其创建的长生命周期对象。
+
+## 包职责
+
+| 包/模块 | 职责 | 不负责 |
+|---|---|---|
+| `models` | 跨层 schema 与枚举 | 配置、I/O、业务流程 |
+| `ingestion` | loader、清洗、父子分块、入库和多索引协调 | 选择具体数据库 provider |
+| `storage` | File/MySQL Repository、Chroma、Corpus 基础设施 | UI 与 Agent 路由 |
+| `retrieval` | Retriever 抽象及 Dense/BM25/Hybrid/RRF/父块/压缩组合 | Streamlit 状态与模型配置 |
+| `graph` | 关系抽取、NetworkX 持久化、GraphService/Retriever 适配 | 企业级图编辑平台 |
+| `generation` | grounded 生成、fallback 抽象和确定性实现 | 检索实现和路由 |
+| `evaluation` | 回答决策与离线检索评估 | 修改 Agent state 或重新检索 |
+| `agent` | state、节点、路由和 LangGraph 编排 | 创建数据库、Chroma 或模型客户端 |
+| `ui` | Streamlit 交互和展示 | 直接访问数据库/索引 |
+| `config.py` | 环境配置契约 | 构造服务对象 |
+| `bootstrap.py` | 选择实现并装配完整对象图 | 业务规则 |
+| `text.py` / `responses.py` | 无方向的共享 tokenizer/稳定响应文本 | 业务编排 |
+
+## 允许依赖方向
 
 ```text
-app.py
-  → ui
-      → ApplicationServices / ingestion 与 agent 接口
-          → agent
-              → BaseRetriever / AnswerGenerator / AnswerEvaluator
-          → ingestion
-              → DocumentRepository / VectorStore / GraphService
-          → retrieval / graph
-              → storage 与向量/图抽象
-                  → Chroma / NetworkX / 文件 Repository 等基础设施实现
+app.py → ui → ApplicationServices
+                     ↓
+          agent / ingestion application services
+                     ↓
+       Retriever / Generator / Evaluator / Repository / Graph abstractions
+                     ↓
+       storage, graph, model-provider concrete adapters
 
-models → 标准库或稳定基础依赖
+models ← all layers (stable contracts)
+bootstrap → all abstractions and concrete adapters (composition exception)
 ```
 
-依赖箭头只能由上层指向接口或下一层能力。`models` 不反向依赖业务包；`retrieval` 不读取
-Streamlit Session State；`ingestion` 不依赖 UI 或 Agent。`ApplicationServices` 是应用级依赖集合，
-`build_application_services()` 是唯一生产装配入口；旧 `ServiceContainer` 与
-`build_service_container()` 保留为向后兼容别名。
+- UI 只消费 `ApplicationServices`、公共模型和应用服务接口；
+- Agent 只接收 `BaseRetriever`、`AnswerGenerator`、`AnswerEvaluator`、`FallbackSynthesizer`、
+  `QueryAnalyzer` 与 `QueryRewriter`；
+- ingestion 通过 `DocumentRepository`、`ChildChunkVectorStore` 和 `GraphService` 边界协调；
+- provider 和路径由 `Settings` 读取，只有 bootstrap/factory 据此选择具体实现；
+- `models` 不读取 `.env`；retrieval/storage 不导入 Streamlit；generation/evaluation 不横向依赖
+  retrieval 实现。
 
-## 禁止穿透
-
-- UI 不直接创建或操作 Chroma、MySQL、Embedding、BM25 或具体 Retriever；
-- Agent 不直接访问数据库、NetworkX、Chroma 或 Streamlit；
-- Agent 节点内部不创建 ChatModel、Retriever、数据库或持久连接；
-- 上层业务模块不绕过接口依赖具体基础设施；
-- 不在多个模块重复装配同一模型、连接或服务图。
-
-上述规则由 `tests/test_architecture_boundaries.py` 的轻量源码扫描保护。具体实现只允许在
-`bootstrap.py` 组合，或者留在它所属的基础设施模块内部。
+`tests/test_architecture_boundaries.py` 使用标准库 AST 检查这些 import/实例化规则；合理例外是
+`bootstrap.py` 需要知道具体实现，基础设施模块可在自己包内使用 chromadb、pymysql、networkx。
 
 ## 运行链路
 
 ```text
 Streamlit UI
-    ↓
+  ↓
 ApplicationServices
-    ├─ CoordinatedIngestionPipeline
-    │   ├─ RealIngestionPipeline → Loader/Cleaner/ParentChildChunker
-    │   ├─ FileDocumentRepository
-    │   ├─ ChromaVectorStore
-    │   ├─ BM25.refresh()
-    │   └─ NetworkXGraphService.build/delete_document()
-    └─ LangGraphAgentService
-        ↓
-      analyze_query
-        ├─ CHAT/NONE ───────────────→ direct_generate → END
-        ├─ SIMPLE/NAIVE ────────────→ naive_retrieve
-        ├─ COMPLEX/ADVANCED ────────→ advanced_retrieve
-        └─ RELATION/GRAPH ──────────→ graph_retrieve
-                                         ↓
-                                    generate_answer
-                                         ↓
-                                    evaluate_answer
-                                    ├─ passed → END
-                                    ├─ fail + budget → rewrite_query → analyze_query
-                                    └─ fail + limit → insufficient_answer → END
+  ├─ CoordinatedIngestionPipeline
+  │    └─ loader → cleaner → parent/child chunker
+  │         → File/MySQL Repository + Chroma + BM25 refresh + Graph
+  └─ LangGraphAgentService
+       analyze_query
+       ├─ CHAT/NONE → direct_generate → END
+       ├─ SIMPLE/NAIVE → naive_retrieve
+       ├─ COMPLEX/ADVANCED → advanced_retrieve
+       └─ RELATION/GRAPH → graph_retrieve
+                              ↓
+                          generate → evaluate
+                          ├─ PASS → END
+                          ├─ REGENERATE → same evidence → generate
+                          ├─ REWRITE_RETRIEVE → rewrite → analyze
+                          ├─ CLARIFY → clarification → END
+                          └─ REFUSE → insufficient → END
 ```
 
-这同时体现：
+回答生成抛出 transport 异常或 regeneration 到达上限时，工作流调用注入的
+`FallbackSynthesizer`；具体 `GroundedFallbackSynthesizer` 只选择少量相关原文句或 Graph relation。
+证据不足则拒答，不把父文档全文作为答案。
 
-- Workflow：`analyze → retrieve → generate → evaluate`；
-- Branch：CHAT、NAIVE、ADVANCED、GRAPH 条件边；
-- Loop：评估失败且 `retry_count < max_retries` 时重写后回到分析节点。
+## 计数、状态和可观察性
 
-## 检索装配
-
-- `NaiveRetriever` 是轻量命名适配器，实际委托成员二 `DenseRetriever`，再由
-  `ParentContextRetriever` 根据 `parent_id` 回溯成员一父块；
-- `AdvancedRetriever` 委托现有 Dense/BM25/Hybrid/RRF/MultiQuery/Reranker/Compression
-  组合，不复制检索算法；
-- `GraphRetriever` 委托成员三 `NetworkXGraphService`，图证据转换为相同的
-  `RetrievedChunk`；
-- 所有结果经公共验证层过滤、去重、截断并按 `normalized_score` 降序排列，原始 Dense、BM25、
-  RRF 与图分数保留在 metadata。
-
-## 生成、评估与模型
-
-`llm.py` 是唯一 ChatModel 初始化位置，当前支持 OpenAI-compatible chat completions。结构化问题
-分类和评估会解析 JSON；模型异常时分类记录轨迹后回落到规则，评估则保守失败。未配置 LLM 时
-使用真实上下文的抽取式 `GroundedAnswerGenerator` 和引用校验，不构造虚假答案。
-
-每个上下文编号包含 source、page、retrieval_method 和 content；最终 `Citation` 从同一份
-`RetrievedChunk` 顺序构建。生成始终回答 `original_query`，重写只影响检索的 `current_query`。
+- `original_query` 始终不变；`current_query` 只在 REWRITE_RETRIEVE 后更新；
+- `retry_count` 只统计检索重试，受 `max_retries` 限制；
+- `regenerate_count` 只统计同证据重新生成，受 `max_regenerations` 限制；
+- transport retry 由 LLM adapter 独立计数，不污染 Agent 两类计数；
+- query/strategy history 与节点决策、评分、重试、fallback 和终止原因写入 execution trace。
 
 ## 数据与生命周期
 
-文档入库同时写 JSON Repository 和 Chroma；协调适配器随后刷新 BM25 并增量构建图。删除操作
-调用真实 pipeline、图服务和 BM25 刷新。运行数据全部位于被 `.gitignore` 排除的 `data/` 子目录。
+Repository provider 可选 `file` 或 `mysql`；`.env.example` 当前以 MySQL 为本地真实运行示例。
+Chroma 保存 child 向量，BM25 从 Repository child corpus 构建，NetworkX 图持久化到 Graph 目录。
+协调入库服务负责写入后刷新/构图以及文档级联删除。父块可作为生成上下文，但生成有字符预算，
+deterministic fallback 只引用实际选中的证据句。
 
-`APP_MODE=real` 是默认值；`APP_MODE=mock` 只用于显式离线开发，不参与真实模式故障降级。
+运行数据位于 `.gitignore` 排除的 `data/`；`APP_MODE=mock` 只能显式启用，真实服务失败不会静默
+切换为 Mock。

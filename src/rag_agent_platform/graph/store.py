@@ -234,6 +234,49 @@ class NetworkXGraphStore:
         ranked = sorted(chunk_scores.items(), key=lambda x: (-x[1], x[0]))
         return ranked[:top_k]
 
+    def relations_for_chunks(
+        self,
+        chunk_ids: set[str],
+        *,
+        entities: list[str] | None = None,
+        limit: int = 10,
+    ) -> list[dict[str, str]]:
+        """Return relation triples backed by the selected chunk provenance."""
+        if not chunk_ids or limit <= 0:
+            return []
+        entity_keys = {_entity_key(entity) for entity in entities or [] if entity.strip()}
+        matched: list[tuple[bool, dict[str, str]]] = []
+        for subject_key, object_key, data in self._graph.edges(data=True):
+            if not chunk_ids.intersection(data.get("chunk_ids", set())):
+                continue
+            subject = str(self._graph.nodes[subject_key].get("label", subject_key)).strip()
+            object_ = str(self._graph.nodes[object_key].get("label", object_key)).strip()
+            predicate = str(data.get("predicate", "")).strip()
+            if not subject or not predicate or not object_:
+                continue
+            directly_matched = any(
+                entity in subject_key
+                or subject_key in entity
+                or entity in object_key
+                or object_key in entity
+                for entity in entity_keys
+            )
+            matched.append(
+                (
+                    directly_matched,
+                    {"subject": subject, "predicate": predicate, "object": object_},
+                )
+            )
+        matched.sort(
+            key=lambda item: (
+                not item[0],
+                item[1]["subject"],
+                item[1]["predicate"],
+                item[1]["object"],
+            )
+        )
+        return [relation for _, relation in matched[:limit]]
+
     @staticmethod
     def _score_edge_chunks(
         edge_data: dict[str, Any],

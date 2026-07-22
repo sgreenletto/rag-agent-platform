@@ -22,6 +22,7 @@ jobs:
       LLM_PROVIDER: ""
       LLM_API_KEY: ""
       EMBEDDING_PROVIDER: hash
+      DOCUMENT_REPOSITORY_PROVIDER: file
 
     steps:
       - name: Checkout repository
@@ -37,7 +38,7 @@ jobs:
         run: uv sync --frozen
 
       - name: Compile package and tests
-        run: uv run python -m compileall src tests app.py
+        run: uv run python -m compileall src tests scripts app.py
 
       - name: Check formatting
         run: uv run ruff format --check .
@@ -47,3 +48,45 @@ jobs:
 
       - name: Test
         run: uv run pytest -q
+
+  mysql-contract:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      APP_MODE: mock
+      DOCUMENT_REPOSITORY_PROVIDER: mysql
+      MYSQL_HOST: 127.0.0.1
+      MYSQL_PORT: 3306
+      MYSQL_USER: root
+      MYSQL_PASSWORD: ci-only-password
+      MYSQL_DATABASE: rag_agent
+      MYSQL_CONNECT_TIMEOUT: 5
+    services:
+      mysql:
+        image: mysql:8.4
+        env:
+          MYSQL_ROOT_PASSWORD: ci-only-password
+          MYSQL_DATABASE: rag_agent
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd="mysqladmin ping -h 127.0.0.1 -pci-only-password"
+          --health-interval=5s
+          --health-timeout=5s
+          --health-retries=20
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install uv and Python
+        uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+          python-version: "3.12"
+
+      - name: Sync frozen dependencies
+        run: uv sync --frozen
+
+      - name: Run MySQL repository contract tests
+        run: uv run pytest tests/test_mysql_repository.py -v

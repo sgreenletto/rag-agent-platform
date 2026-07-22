@@ -1,7 +1,30 @@
 # 公共接口约定
 
+当前稳定接口版本：`v1.0.0`。本次版本收口只增加兼容性 fallback 抽象，没有删除既有公共方法。
+
 所有路径均相对于正式 Python 包 `src/rag_agent_platform/`。`src` 只是源码根目录，不是导入包；
 项目内部统一使用 `rag_agent_platform...` 绝对导入。
+
+## 抽象、实现、测试替身与装配
+
+| 抽象/稳定边界 | 生产实现 | 测试替身 | 装配位置 |
+|---|---|---|---|
+| `DocumentRepository` | `FileDocumentRepository`、`MySQLDocumentRepository` | `MockDocumentRepository`、测试内 InMemory/Fake | `storage.factory` 由 `bootstrap.py` 调用 |
+| `ChildChunkVectorStore` | `ChromaVectorStore` | 测试内 Fake Vector Store | `bootstrap.py` |
+| `EmbeddingModel` | `HashEmbeddingModel`、`OpenAICompatibleEmbeddingModel` | Fake/Hash | `embeddings.factory` / `bootstrap.py` |
+| `DenseSearchBackend` | `ChromaDenseSearchBackend` | 测试内 Fake Backend | `bootstrap.py` |
+| `BaseRetriever` | Dense、BM25、Naive、Advanced、Graph 等适配器 | `MockRetriever`、Spy/Fake Retriever | `bootstrap.py` |
+| `GraphService` | `NetworkXGraphService` | 测试内 Fake；Retriever 级 `MockGraphRetriever` | `bootstrap.py` |
+| `ChatModel` Protocol | `OpenAICompatibleChatModel` | Fake/sequence/failing model | `llm.build_chat_model` / `bootstrap.py` |
+| `AnswerGenerator` | `GroundedAnswerGenerator` | Fake/Spy Generator | `bootstrap.py` |
+| `FallbackSynthesizer` Protocol | `GroundedFallbackSynthesizer` | Fake Synthesizer | `bootstrap.py` 注入 Generator 与 Agent |
+| `AnswerEvaluator` | `GroundedAnswerEvaluator` | Fake/sequence Evaluator | `bootstrap.py` |
+| `QueryAnalyzer` / `QueryRewriter` | `StructuredQueryAnalyzer` / `BoundedQueryRewriter` | Stub Analyzer/Rewriter | `bootstrap.py` |
+| `IngestionPipeline` | `RealIngestionPipeline`、`CoordinatedIngestionPipeline` | `MockIngestionPipeline` | `bootstrap.py` |
+| `AgentService` | `LangGraphAgentService` | `MockAgentService` | `bootstrap.py` |
+
+不是每个内部类都需要新接口。例如 Graph store 是 `NetworkXGraphService` 的包内实现细节，高层只
+依赖 `GraphService`；为其再制造空接口不会改善注入。
 
 ## 公共数据模型
 
@@ -60,8 +83,10 @@
 
 字段为 `answer: str`、`citations: list[Citation]`、`strategy: RetrievalStrategy`、
 `query_type: QueryType`、`retry_count: int`、`execution_trace: list[str]`，以及带默认值的
+`regenerate_count: int`、`refused: bool`、`evaluation_decision: str | None`、
+`query_history: list[str]`、`strategy_history: list[RetrievalStrategy]`、
 `retrieved_chunks: list[RetrievedChunk]`、`error: str | None`。新增字段位于原构造字段之后，旧的
-位置参数和关键字构造保持兼容。
+必填位置参数和关键字构造保持兼容。
 
 ## IngestionPipeline
 
@@ -142,8 +167,9 @@ DenseSearchBackend.search(
 `similarity`（越大越相关）和 `distance`（越小越相关）两类后端分数，负责归一化、阈值过滤
 并转换为统一的 `RetrievedChunk`。真实 Embedding 与 Chroma 适配器由存储实现接入。
 
-当前 Dense 分数采用单次候选集合内的 Min-Max 归一化；只有一个候选或全部同分时统一记为
-`1.0`。因此阈值是模式内、查询内的相对分数阈值，不应将 BM25、Dense、RRF 与 Reranker 的
+当前 Dense 分数采用单次候选集合内的 Min-Max 归一化；只有一个候选或全部同分时保留 `[0, 1]`
+内原分数，非正值记为 `0.0`，大于 1 的值按 `score / (1 + score)` 映射，不再把单一候选自动记为
+`1.0`。因此阈值仍主要是模式内、查询内的相对分数阈值，不应将 BM25、Dense、RRF 与 Reranker 的
 `normalized_score` 作为可跨模式直接比较的绝对置信度。真实 Chroma Backend 接入前，团队需
 确认距离/相似度类型以及是否提供可校准的绝对分数映射。
 
@@ -268,8 +294,11 @@ generate(
 
 路径：`rag_agent_platform.evaluation.base`。
 
-`EvaluationResult` 字段为 `passed: bool`、`reason: str`、
-`suggested_query: str | None`。
+`EvaluationDecision` 是 `StrEnum`：`PASS`、`REGENERATE`、`REWRITE_RETRIEVE`、`CLARIFY`、
+`REFUSE`。`EvaluationResult` 保留原有 `passed`、`reason`、`suggested_query` 构造顺序，并新增
+`decision`、`relevance_score`、`groundedness_score`、`completeness_score`、
+`citation_quality_score` 与 `unsupported_claims`。未显式传入 `decision` 的旧调用仍按
+`passed=True → PASS`、`passed=False → REWRITE_RETRIEVE` 解释。
 
 ```python
 evaluate(
@@ -279,7 +308,8 @@ evaluate(
 ) -> EvaluationResult
 ```
 
-未来重写循环仅在评估未通过且未超过重试上限时使用 `suggested_query`。
+`suggested_query` 只在 `REWRITE_RETRIEVE` 路径使用，且必须通过数字、对象、企业、品牌和问题数量
+的语义守恒校验。`REGENERATE` 不修改查询、不重新路由也不调用 Retriever。
 
 ## AgentService
 
@@ -307,14 +337,20 @@ invoke(
 - `query_type: QueryType`、`retrieval_strategy: RetrievalStrategy`；
 - `retrieved_chunks: list[RetrievedChunk]`、`retrieval_sufficient: bool`；
 - `answer: str`、`citations: list[Citation]`；
-- `answer_passed: bool`、`evaluation_reason: str`；
+- `answer_passed: bool`、`evaluation_result: EvaluationResult | None`、
+  `evaluation_decision: EvaluationDecision`、`evaluation_reason: str`；
 - `suggested_query: str | None`；
-- `retry_count: int`、`max_retries: int`、`execution_trace: list[str]`；
-- `error: str | None`。
+- `retry_count: int`、`max_retries: int`、`regenerate_count: int`、
+  `max_regenerations: int`；
+- `query_history: list[str]`、`strategy_history: list[RetrievalStrategy]`、`refused: bool`、
+  `execution_trace: list[str]`；
+- `generation_failed: bool`、`error: str | None`。
 
 正式 StateGraph 节点为 `analyze_query`、`direct_generate`、`naive_retrieve`、
-`advanced_retrieve`、`graph_retrieve`、`generate_answer`、`evaluate_answer`、
-`rewrite_query` 和 `insufficient_answer`。失败重写会真实增加 `retry_count`，默认最多重试 2 次。
+`advanced_retrieve`、`graph_retrieve`、`generate_answer`、`prepare_regeneration`、
+`evaluate_answer`、`rewrite_query`、`conservative_answer`、`clarification_answer` 和
+`insufficient_answer`。检索重写增加 `retry_count`（默认最多 2 次）；同证据重新生成只增加
+`regenerate_count`（默认最多 1 次）。
 
 ## Naive / Advanced 命名适配器
 

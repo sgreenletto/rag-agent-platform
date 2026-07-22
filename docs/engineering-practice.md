@@ -57,12 +57,13 @@ bootstrap → 所有接口和具体实现（唯一装配例外）
 - 不在多个位置重复装配模型、连接和索引；
 - 不使用 `from src`、`sys.path` 或手工 `PYTHONPATH` 绕过 package 安装。
 
-这些规则由 `tests/test_architecture_boundaries.py` 进行轻量源码扫描保护。
+这些规则由 `tests/test_architecture_boundaries.py` 使用标准库 AST 检查 import 和具体实例化保护。
 
 ## 5. 依赖注入
 
-项目先定义 `DocumentRepository`、`BaseRetriever`、`AnswerGenerator`、`AnswerEvaluator`、
-`GraphService`、`IngestionPipeline` 和 `AgentService` 等抽象边界，再由具体实现满足接口。
+项目先定义 `DocumentRepository`、`EmbeddingModel`、`BaseRetriever`、`ChatModel`、
+`AnswerGenerator`、`FallbackSynthesizer`、`AnswerEvaluator`、`GraphService`、`IngestionPipeline` 和
+`AgentService` 等抽象边界，再由具体实现满足接口。
 
 - `RealIngestionPipeline` 通过构造函数接收 Repository 和 Vector Store；
 - `CoordinatedIngestionPipeline` 接收真实 Pipeline、Chunk Repository、可刷新 Retriever 和图服务；
@@ -101,13 +102,23 @@ feature/*
 
 使用语义化版本 `MAJOR.MINOR.PATCH`：
 
-- `v0.1.0`：工程骨架；
-- `v0.2.0`：Naive RAG MVP；
-- `v0.3.0`：Advanced RAG；
-- `v0.4.0`：GraphRAG；
-- `v0.5.0`：Agentic RAG；
-- `v1.0.0`：最终稳定答辩版。
+- `v0.1.0`：初始模块化工程；
+- `v0.2.0`：ingestion/storage 合入；
+- `v0.3.0`：retrieval 配置与检索阶段；
+- `v0.4.0`：GraphRAG 合入；
+- `v0.5.0`：agent-ui 合入；
+- `v0.6.0`：real embedding/MySQL 合入；
+- `v0.7.0`：engineering-practice 合入，上一正式里程碑和当前已存在的最新 tag；
+- `v1.0.0`：当前课程最终交付版本；tag 待本次 release candidate 合入 main 后创建。
 
 MAJOR 表示不兼容接口变更，MINOR 表示向后兼容功能，PATCH 表示向后兼容修复。Tag 只能指向
-真实完成相应验收的提交；计划版本号不是创建 Tag 的授权。发布时同步项目元数据、CHANGELOG、
-Release Notes、CI 结果和已知限制。
+真实完成相应验收的提交；版本元数据不是创建 Tag 的授权。当前 `1.0.0` 代码必须先经 feature、
+develop、main 门禁，随后才在 main 稳定提交创建 `v1.0.0`。发布时同步 CHANGELOG、Release Notes、
+CI 结果和已知限制。详细步骤见 `release-process.md`。
+
+## 9. v1.0.0 最终工程闭环
+
+老师要求的功能划分、需求/边界、开发步骤、分层/package、跨层控制、DI、接口实现、Git/Tag、持续
+优化/发布、MVP 和 TDD 已逐项映射到 `engineering-checklist.md`。需求由 `traceability.md` 追踪到
+模块和测试；本地质量由 compileall、Ruff、pytest、coverage、MySQL、ApplicationServices 和
+Streamlit 验证；远程 CI、develop/main 合并与 `v1.0.0` tag 在本次提交之后按发布流程执行。
