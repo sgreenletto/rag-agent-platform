@@ -1,7 +1,30 @@
 # 公共接口约定
 
+当前稳定接口版本：`v1.0.0`。本次版本收口只增加兼容性 fallback 抽象，没有删除既有公共方法。
+
 所有路径均相对于正式 Python 包 `src/rag_agent_platform/`。`src` 只是源码根目录，不是导入包；
 项目内部统一使用 `rag_agent_platform...` 绝对导入。
+
+## 抽象、实现、测试替身与装配
+
+| 抽象/稳定边界 | 生产实现 | 测试替身 | 装配位置 |
+|---|---|---|---|
+| `DocumentRepository` | `FileDocumentRepository`、`MySQLDocumentRepository` | `MockDocumentRepository`、测试内 InMemory/Fake | `storage.factory` 由 `bootstrap.py` 调用 |
+| `ChildChunkVectorStore` | `ChromaVectorStore` | 测试内 Fake Vector Store | `bootstrap.py` |
+| `EmbeddingModel` | `HashEmbeddingModel`、`OpenAICompatibleEmbeddingModel` | Fake/Hash | `embeddings.factory` / `bootstrap.py` |
+| `DenseSearchBackend` | `ChromaDenseSearchBackend` | 测试内 Fake Backend | `bootstrap.py` |
+| `BaseRetriever` | Dense、BM25、Naive、Advanced、Graph 等适配器 | `MockRetriever`、Spy/Fake Retriever | `bootstrap.py` |
+| `GraphService` | `NetworkXGraphService` | 测试内 Fake；Retriever 级 `MockGraphRetriever` | `bootstrap.py` |
+| `ChatModel` Protocol | `OpenAICompatibleChatModel` | Fake/sequence/failing model | `llm.build_chat_model` / `bootstrap.py` |
+| `AnswerGenerator` | `GroundedAnswerGenerator` | Fake/Spy Generator | `bootstrap.py` |
+| `FallbackSynthesizer` Protocol | `GroundedFallbackSynthesizer` | Fake Synthesizer | `bootstrap.py` 注入 Generator 与 Agent |
+| `AnswerEvaluator` | `GroundedAnswerEvaluator` | Fake/sequence Evaluator | `bootstrap.py` |
+| `QueryAnalyzer` / `QueryRewriter` | `StructuredQueryAnalyzer` / `BoundedQueryRewriter` | Stub Analyzer/Rewriter | `bootstrap.py` |
+| `IngestionPipeline` | `RealIngestionPipeline`、`CoordinatedIngestionPipeline` | `MockIngestionPipeline` | `bootstrap.py` |
+| `AgentService` | `LangGraphAgentService` | `MockAgentService` | `bootstrap.py` |
+
+不是每个内部类都需要新接口。例如 Graph store 是 `NetworkXGraphService` 的包内实现细节，高层只
+依赖 `GraphService`；为其再制造空接口不会改善注入。
 
 ## 公共数据模型
 
@@ -59,7 +82,11 @@
 ### AgentResult
 
 字段为 `answer: str`、`citations: list[Citation]`、`strategy: RetrievalStrategy`、
-`query_type: QueryType`、`retry_count: int`、`execution_trace: list[str]`。
+`query_type: QueryType`、`retry_count: int`、`execution_trace: list[str]`，以及带默认值的
+`regenerate_count: int`、`refused: bool`、`evaluation_decision: str | None`、
+`query_history: list[str]`、`strategy_history: list[RetrievalStrategy]`、
+`retrieved_chunks: list[RetrievedChunk]`、`error: str | None`。新增字段位于原构造字段之后，旧的
+必填位置参数和关键字构造保持兼容。
 
 ## IngestionPipeline
 
@@ -102,6 +129,137 @@ retrieve(
 
 所有实现只能返回 `list[RetrievedChunk]`，不得返回 LangChain Document、元组、字典或裸字符串。
 结果必须按 `normalized_score` 降序；`document_ids` 非空时只返回指定文档；`top_k` 必须大于 0。
+`document_ids=None` 表示不限制文档，`document_ids=[]` 表示没有可检索文档并必须返回空列表；
+所有正式实现还必须按 `chunk_id` 去重。同分结果统一以 `chunk_id` 升序作为确定性次序。
+
+## ChunkCorpus
+
+路径：`rag_agent_platform.retrieval.corpus.ChunkCorpus`。
+
+```python
+list_chunks(document_ids: list[str] | None = None) -> list[ChildChunk]
+```
+
+该只读协议用于 BM25 等需要语料快照的 Retriever，并将检索算法与 MySQL、Chroma 或内存
+存储解耦。成员一可以通过适配器实现该协议，无需修改现有 `DocumentRepository` 公共接口。
+
+检索实现应复用 `rag_agent_platform.retrieval.validation` 中的公共规则：校验空查询和
+`top_k`、将原始分数归一化到 `[0.0, 1.0]`，并在文档过滤后按分数降序截取结果。
+
+## 阶段二检索实现
+
+`rag_agent_platform.retrieval.bm25.BM25Retriever` 使用 `jieba` 和 `rank-bm25` 建立可刷新
+的内存稀疏索引。构造时接收 `ChunkCorpus`，`refresh()` 用于文档新增或删除后重建快照；结果
+在 `metadata["bm25_score"]` 中保留原始分数。
+
+`rag_agent_platform.retrieval.dense.DenseRetriever` 不直接依赖 Chroma。成员一提供的向量存储
+适配器只需实现以下协议：
+
+```python
+DenseSearchBackend.search(
+    query: str,
+    document_ids: list[str] | None,
+    limit: int,
+) -> list[DenseSearchHit]
+```
+
+`DenseSearchHit` 包含 `ChildChunk`、后端原始分数、来源和可选元数据。`DenseRetriever` 支持
+`similarity`（越大越相关）和 `distance`（越小越相关）两类后端分数，负责归一化、阈值过滤
+并转换为统一的 `RetrievedChunk`。真实 Embedding 与 Chroma 适配器由存储实现接入。
+
+当前 Dense 分数采用单次候选集合内的 Min-Max 归一化；只有一个候选或全部同分时保留 `[0, 1]`
+内原分数，非正值记为 `0.0`，大于 1 的值按 `score / (1 + score)` 映射，不再把单一候选自动记为
+`1.0`。因此阈值仍主要是模式内、查询内的相对分数阈值，不应将 BM25、Dense、RRF 与 Reranker 的
+`normalized_score` 作为可跨模式直接比较的绝对置信度。真实 Chroma Backend 接入前，团队需
+确认距离/相似度类型以及是否提供可校准的绝对分数映射。
+
+## RRF 与混合检索
+
+`rag_agent_platform.retrieval.fusion.reciprocal_rank_fusion` 按 `chunk_id` 合并多个命名结果
+列表，使用加权 Reciprocal Rank Fusion：
+
+```text
+fused_score(chunk) = Σ weight(retriever) / (rrf_k + rank)
+```
+
+融合结果的 `retrieval_method` 为 `hybrid_rrf`，并在 metadata 中保留 `rrf_score` 以及每一路
+的原排名、归一化分数和 RRF 贡献。
+
+`rag_agent_platform.retrieval.hybrid.HybridRetriever` 组合 Dense 与 Sparse Retriever。两路各
+召回 `top_k * candidate_multiplier` 个候选，再通过 RRF 去重融合。默认 `failure_mode="fallback"`：
+单路失败时继续使用另一路，并在结果的 `metadata["retrieval_warnings"]` 中记录错误；两路均
+失败时抛出 `RuntimeError`。使用 `failure_mode="raise"` 可以启用严格模式，直接传播单路异常。
+
+## Query Rewrite 与 Multi-Query
+
+查询改写服务实现 `rag_agent_platform.retrieval.multi_query.QueryTransformer`：
+
+```python
+transform(query: str) -> list[str]
+```
+
+`MultiQueryRetriever` 始终保留原问题，对改写结果去空、去重并应用 `max_queries` 上限，然后
+扩大每个查询的候选集并使用 RRF 合并。`IdentityQueryTransformer` 是未配置 LLM 时的安全
+默认值。改写服务异常时默认退回原问题，并在结果 metadata 中写入
+`query_transform_warning`；关闭 `fallback_on_transform_error` 后会直接传播异常。
+
+## Reranker
+
+所有重排器实现 `rag_agent_platform.retrieval.reranker.BaseReranker`：
+
+```python
+rerank(
+    query: str,
+    chunks: list[RetrievedChunk],
+    top_k: int,
+) -> list[RetrievedChunk]
+```
+
+`TokenOverlapReranker` 是无需模型服务即可运行的确定性实现，将查询词覆盖率与召回分数加权
+组合，并在 metadata 中保留 `pre_rerank_score`、`token_overlap_score` 和 `rerank_score`。
+`RerankingRetriever` 用于包装任意 Retriever，先扩大候选集，再调用可插拔 Reranker 并截取
+Top-K。未来 Cross-Encoder 或外部 Rerank API 只需实现 `BaseReranker`，无需修改上层接口。
+
+## 上下文压缩
+
+压缩器实现 `rag_agent_platform.retrieval.compression.ContextCompressor`：
+
+```python
+compress(
+    query: str,
+    chunks: list[RetrievedChunk],
+    max_chars: int,
+) -> list[RetrievedChunk]
+```
+
+`SentenceContextCompressor` 按查询词覆盖率选择句子，并保证所有返回内容的总字符数不超过
+`max_chars`。压缩不会改变 `chunk_id`、文档/父块关联、来源、页码或分数；metadata 会记录压缩
+方法及压缩前后长度。`CompressionRetriever` 可包装任意 Retriever，在统一接口内执行压缩。
+当前实现适合自然语言段落；代码块、Markdown 表格和结构化文本可能被截断，接入真实文档时
+应依据 Chunk 类型配置跳过策略或专用压缩器。全局预算按检索排名依次分配，不保证 Chunk 间
+平均分配。
+
+## 无答案阈值
+
+`rag_agent_platform.retrieval.threshold.RelevanceThreshold` 支持四项组合规则：单块最低分、
+第一名最低分、最少有效结果数，以及第一名与第二名的最低分差。任何条件不满足时返回空列表，
+即当前公共 Retriever 契约中的“无答案”信号。
+
+`ThresholdRetriever` 会扩大底层候选集以便判断最少证据数，再应用策略并返回 Top-K。阈值均
+作用于 `[0.0, 1.0]` 的 `normalized_score`；具体值必须通过离线测试集校准，不能直接将默认值
+视为生产配置。
+只有一个有效结果时不应用 `min_score_gap`，因为不存在第二名。当前空列表同时表示“无相关
+答案”和“底层 Retriever 正常返回空结果”；系统异常仍应抛出，不得转换为空列表。若成员四
+需要展示拒绝原因，需要团队确认新的诊断接口，不能改变现有 `list[RetrievedChunk]` 契约。
+
+## 检索离线评估
+
+`rag_agent_platform.evaluation` 导出 `RetrievalEvaluationCase`、数据集加载器、排名指标和
+`RetrievalEvaluationRunner`。Runner 对命名 Retriever 使用相同问题集和 Top-K，输出逐题结果
+及 Recall@K、Precision@K、Hit Rate@K、MRR、nDCG@K、无答案准确率和平均耗时。
+
+`relevant_document_ids` 仅是相关性标注，不会用于过滤检索结果；只有独立的 `document_ids`
+表示用户选择的检索范围。详细格式与复现命令见 `docs/retrieval-evaluation.md`。
 
 ## GraphService
 
@@ -136,8 +294,11 @@ generate(
 
 路径：`rag_agent_platform.evaluation.base`。
 
-`EvaluationResult` 字段为 `passed: bool`、`reason: str`、
-`suggested_query: str | None`。
+`EvaluationDecision` 是 `StrEnum`：`PASS`、`REGENERATE`、`REWRITE_RETRIEVE`、`CLARIFY`、
+`REFUSE`。`EvaluationResult` 保留原有 `passed`、`reason`、`suggested_query` 构造顺序，并新增
+`decision`、`relevance_score`、`groundedness_score`、`completeness_score`、
+`citation_quality_score` 与 `unsupported_claims`。未显式传入 `decision` 的旧调用仍按
+`passed=True → PASS`、`passed=False → REWRITE_RETRIEVE` 解释。
 
 ```python
 evaluate(
@@ -147,7 +308,8 @@ evaluate(
 ) -> EvaluationResult
 ```
 
-未来重写循环仅在评估未通过且未超过重试上限时使用 `suggested_query`。
+`suggested_query` 只在 `REWRITE_RETRIEVE` 路径使用，且必须通过数字、对象、企业、品牌和问题数量
+的语义守恒校验。`REGENERATE` 不修改查询、不重新路由也不调用 Retriever。
 
 ## AgentService
 
@@ -161,23 +323,49 @@ invoke(
 ) -> AgentResult
 ```
 
-`mode` 只允许 `agent`、`naive`、`advanced`、`graph`。当前
-`rag_agent_platform.agent.mock.MockAgentService` 只进行规则路由和 Mock 回答，不是完整
-LangGraph Agent。
+`mode` 只允许 `agent`、`naive`、`advanced`、`graph`，非法值抛出明确 `ValueError`。
+`rag_agent_platform.agent.service.LangGraphAgentService` 是正式实现；构造函数注入三个
+`BaseRetriever`、Generator、Evaluator、Analyzer 和 Rewriter。`MockAgentService` 只用于测试和
+显式 `APP_MODE=mock`。
 
 ## AgentState
 
 路径：`rag_agent_platform.agent.state.AgentState`，为 `TypedDict`，包含：
 
-- `original_query: str`、`current_query: str`、`document_ids: list[str]`；
+- `original_query: str`、`current_query: str`、`document_ids: list[str] | None`；
+- `mode: str`；
 - `query_type: QueryType`、`retrieval_strategy: RetrievalStrategy`；
 - `retrieved_chunks: list[RetrievedChunk]`、`retrieval_sufficient: bool`；
 - `answer: str`、`citations: list[Citation]`；
-- `answer_passed: bool`、`evaluation_reason: str`；
-- `retry_count: int`、`max_retries: int`、`execution_trace: list[str]`；
-- `error: str | None`。
+- `answer_passed: bool`、`evaluation_result: EvaluationResult | None`、
+  `evaluation_decision: EvaluationDecision`、`evaluation_reason: str`；
+- `suggested_query: str | None`；
+- `retry_count: int`、`max_retries: int`、`regenerate_count: int`、
+  `max_regenerations: int`；
+- `query_history: list[str]`、`strategy_history: list[RetrievalStrategy]`、`refused: bool`、
+  `execution_trace: list[str]`；
+- `generation_failed: bool`、`error: str | None`。
 
-本阶段只定义 State，不构建真实 LangGraph。
+正式 StateGraph 节点为 `analyze_query`、`direct_generate`、`naive_retrieve`、
+`advanced_retrieve`、`graph_retrieve`、`generate_answer`、`prepare_regeneration`、
+`evaluate_answer`、`rewrite_query`、`conservative_answer`、`clarification_answer` 和
+`insufficient_answer`。检索重写增加 `retry_count`（默认最多 2 次）；同证据重新生成只增加
+`regenerate_count`（默认最多 1 次）。
+
+## Naive / Advanced 命名适配器
+
+`rag_agent_platform.retrieval.pipelines.NaiveRetriever` 和 `AdvancedRetriever` 只负责为装配后的
+成员二 Pipeline 提供稳定名称和统一委托，不复制 Dense、BM25、RRF 或 Reranker 算法。
+`ParentContextRetriever` 根据 `parent_id` 从 Repository 读取父块，保留命中的 child `chunk_id`、
+分数和 metadata，并把原子块文本写入 `metadata["matched_child_content"]`。
+
+## ApplicationServices / ServiceContainer
+
+`rag_agent_platform.bootstrap.build_application_services(settings)` 集中创建 Settings、Repository、
+Ingestion、Chroma、Naive、Advanced、Graph、ChatModel、Generator、Evaluator 和 Agent，并返回
+显式暴露这些依赖的 `ApplicationServices`。`ServiceContainer` 与 `build_service_container()` 是
+向后兼容别名。默认
+`APP_MODE=real`；未配置 LLM 返回本地 grounded 组件，不等于 Mock。配置错误会抛出明确异常。
 
 ## 异常处理
 

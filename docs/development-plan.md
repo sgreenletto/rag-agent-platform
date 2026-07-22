@@ -1,46 +1,35 @@
-# 四人开发计划
+# 开发步骤与最终状态
 
-## 当前共同基线
+## 开发方法
 
-全组从公共数据模型、抽象接口、Mock 闭环和契约测试开始。成员实现真实模块时必须保持
-`RetrievedChunk`、`AgentResult` 等公共输出稳定，避免各分支形成不兼容的数据结构。
+```text
+需求分析 → 边界确认 → 分层设计 → 接口抽象 → 依赖注入
+→ TDD/回归测试 → CI → MVP 演进 → develop/main 发布 → v1.0.0
+```
 
-## 成员一：文档入库与存储
+每项需求先定义输入、输出、失败语义和可执行验收；新增行为先以失败测试或回归测试固定，再完成
+最小实现和重构。高层依赖抽象，具体 provider 只在 Composition Root 选择。
 
-- PDF、Word 与文本解析；
-- 清洗、父子切块；
-- Chroma 向量存储；
-- MySQL 文档与元数据存储；
-- 文档删除的一致性清理与入库测试。
+## 最终已完成能力
 
-## 成员二：Naive 与 Advanced RAG
+- 文档：TXT/Markdown/PDF/DOCX、清洗、父子分块；
+- 存储：File/MySQL Repository、Chroma、BM25 corpus、NetworkX Graph；
+- 检索：Naive、Advanced、Graph 及统一分数、过滤、去重、引用；
+- Agent：自动路由、Workflow、Branch、Loop、五类 evaluation decision、Query Rewrite；
+- 稳定性：transport retry、Grounded Fallback、异常回答拦截、无答案拒答；
+- 数据一致性：Repository/Chroma/BM25/Graph 删除同步和重启恢复；
+- 应用：Composition Root、依赖注入、Streamlit、CI、需求追踪、部署和验收文档。
 
-- Naive RAG；
-- Dense Retriever；
-- BM25、RRF、Reranker；
-- Advanced RAG 组合检索；
-- 检索指标和离线评估。
+实现与测试的逐项映射见 [traceability.md](traceability.md)。上述“完成”限于 requirements 中定义的
+课程范围，不等于生产级高可用、多租户或商业知识图谱平台。
 
-## 成员三：GraphRAG
+## v1.0.0 交付步骤
 
-- 实体与关系提取；
-- 图数据构建与文档级删除；
-- GraphRetriever；
-- 图证据转换为 `RetrievedChunk`；
-- GraphRAG 单元与集成测试。
+当前工作区是 `1.0.0` release candidate。本次本地门禁通过后，由维护者审阅并提交当前 feature，
+依次通过 PR 合入 develop、main；远程 GitHub Actions 在 PR 阶段验证。最后在 main 已提交的稳定
+commit 上创建不可移动的 `v1.0.0` tag 和 Release Notes。本轮不执行这些 Git 写操作。
 
-## 成员四：Agent、生成与界面
+## 交付后的可选增强
 
-- LangGraph AgentState 与工作流；
-- 问题分类和 Retriever 路由；
-- 回答生成、评估和查询重写循环；
-- Streamlit 页面与服务集成；
-- 端到端 Mock/真实模块切换测试。
-
-## 建议迭代顺序
-
-1. 各成员基于 `develop` 创建独立 `feature/*` 分支，并保持契约测试通过；
-2. 先接入真实文档与单路 Naive 检索，验证端到端数据；
-3. 增加 Advanced 与 Graph 检索，但继续输出统一公共模型；
-4. 最后将规则 Mock Agent 替换为受重试上限保护的 LangGraph 编排；
-5. 每次集成均执行 compileall、Ruff、pytest 和 Streamlit 冒烟测试。
+真实评估集阈值校准、页级/表格定位、浏览器级 E2E、并发性能、认证授权、生产监控和备份灾备是
+后续可选增强，不是本版本未完成的课程需求。

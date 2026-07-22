@@ -7,6 +7,7 @@ class Settings(BaseSettings):
     """Environment-backed settings with safe development defaults."""
 
     app_env: str = "dev"
+    app_mode: str = "real"
     app_name: str = "RAG Agent Platform"
 
     llm_provider: str = ""
@@ -19,11 +20,28 @@ class Settings(BaseSettings):
     embedding_api_key: str = ""
     embedding_base_url: str = ""
 
+    document_repository_provider: str = "file"
+    metadata_path: str = "data/metadata/documents.json"
+    chroma_persist_directory: str = "data/chroma"
+    chroma_collection_name: str = "rag_child_chunks"
+    graph_persist_directory: str = "data/graph"
+    upload_directory: str = "data/uploads"
+    retrieval_top_k: int = 5
+    dense_candidate_k: int = 20
+    bm25_candidate_k: int = 20
+    rerank_top_k: int = 5
+    retrieval_score_threshold: float = 0.0
+    agent_max_retries: int = 2
+    agent_max_regenerations: int = 1
+    hash_embedding_dimensions: int = 32
+
     mysql_host: str = "127.0.0.1"
     mysql_port: int = 3306
     mysql_user: str = ""
     mysql_password: str = ""
     mysql_database: str = "rag_agent"
+    mysql_charset: str = "utf8mb4"
+    mysql_connect_timeout: int = 5
 
     model_config = SettingsConfigDict(
         env_file=".env",
