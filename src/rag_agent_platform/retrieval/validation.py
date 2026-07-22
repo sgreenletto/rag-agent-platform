@@ -1,5 +1,6 @@
 """Shared input, score and result helpers for retrieval implementations."""
 
+import re
 from collections.abc import Iterable
 from math import isfinite
 
@@ -17,7 +18,7 @@ def validate_retrieval_request(query: str, top_k: int) -> str:
 
 
 def min_max_normalize(scores: Iterable[float]) -> list[float]:
-    """Normalize finite scores to [0, 1], preserving equal positive scores."""
+    """Normalize finite scores without turning a singleton into automatic certainty."""
     values = list(scores)
     if any(not isfinite(value) for value in values):
         raise ValueError("scores must contain only finite values")
@@ -27,7 +28,13 @@ def min_max_normalize(scores: Iterable[float]) -> list[float]:
     minimum = min(values)
     maximum = max(values)
     if minimum == maximum:
-        return [1.0 for _ in values]
+        if maximum <= 0.0:
+            confidence = 0.0
+        elif maximum <= 1.0:
+            confidence = maximum
+        else:
+            confidence = maximum / (1.0 + maximum)
+        return [confidence for _ in values]
     scale = maximum - minimum
     return [(value - minimum) / scale for value in values]
 
@@ -46,11 +53,27 @@ def finalize_results(
     ]
     ranked = sorted(filtered, key=lambda chunk: (-chunk.normalized_score, chunk.chunk_id))
     deduplicated: list[RetrievedChunk] = []
-    seen: set[str] = set()
+    seen_ids: set[str] = set()
+    seen_parent_contexts: set[tuple[str | None, str]] = set()
+    seen_contents: set[tuple[str | None, int | None, str]] = set()
     for chunk in ranked:
-        if chunk.chunk_id not in seen:
-            seen.add(chunk.chunk_id)
-            deduplicated.append(chunk)
+        if chunk.chunk_id in seen_ids:
+            continue
+        normalized_content = re.sub(r"\W+", "", chunk.content.casefold())
+        content_key = (chunk.document_id or chunk.source, chunk.page, normalized_content)
+        parent_context_id = chunk.metadata.get("parent_context_chunk_id")
+        parent_key = (
+            (chunk.document_id, str(parent_context_id)) if parent_context_id is not None else None
+        )
+        if content_key in seen_contents or (
+            parent_key is not None and parent_key in seen_parent_contexts
+        ):
+            continue
+        seen_ids.add(chunk.chunk_id)
+        seen_contents.add(content_key)
+        if parent_key is not None:
+            seen_parent_contexts.add(parent_key)
+        deduplicated.append(chunk)
     return deduplicated[:top_k]
 
 

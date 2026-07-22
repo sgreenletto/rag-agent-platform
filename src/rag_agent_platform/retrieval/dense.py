@@ -86,7 +86,14 @@ class DenseRetriever(BaseRetriever):
         ranking_scores = [
             hit.score if self._score_kind == "similarity" else -hit.score for hit in hits
         ]
-        normalized_scores = min_max_normalize(ranking_scores)
+        if (
+            self._score_kind == "distance"
+            and ranking_scores
+            and min(ranking_scores) == max(ranking_scores)
+        ):
+            normalized_scores = [1.0 / (1.0 + max(hit.score, 0.0)) for hit in hits]
+        else:
+            normalized_scores = min_max_normalize(ranking_scores)
         results = [
             self._to_result(hit, normalized_score)
             for hit, normalized_score in zip(hits, normalized_scores, strict=True)

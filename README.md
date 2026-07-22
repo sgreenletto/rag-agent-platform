@@ -1,66 +1,74 @@
-# RAG Agent Platform
+# Agentic RAG Platform
 
-RAG Agent Platform 是一个采用标准 Python src-layout 的模块化智能文档问答系统。当前版本已把
-真实文档入库、Naive/Advanced/Graph 检索、LangGraph Agent、回答生成/评估/重写循环和
-Streamlit 页面装配为一个可运行闭环；所有检索模式统一输出 `list[RetrievedChunk]`。
+Current stable version: `v1.0.0`
 
-项目面向企业内部文档查询、课程方案评审与知识库演示维护，目标是在一个可安装、可测试的
-Python package 中比较四类 RAG 工作流，而不是建设生产级多租户知识平台。当前包版本为
-`0.5.0`；版本状态以 `pyproject.toml`、`CHANGELOG.md` 与实际 Git tag 共同为准。
+Previous milestone: `v0.7.0`
 
-## 已实现能力
+Project status: **Final course delivery**
 
-- TXT、Markdown、PDF、DOCX 解析、清洗与父子切块；
-- JSON 文档元数据仓库、Chroma 子块向量存储及文档级一致性删除；
-- 本地 Hash Embedding、Dense Retrieval 与父块回溯；
-- BM25、Dense + BM25 Hybrid、加权 RRF、Multi-Query 边界、Token Overlap Reranker、
-  句子压缩和阈值组件；
-- NetworkX 图存储、规则实体关系抽取、1–2 跳 GraphRAG 和文档过滤；
-- 真实 LangGraph `StateGraph`：问题分析、Retriever 分支、生成、评估、查询重写和有界重试；
-- Agent 自动、Naive RAG、Advanced RAG、GraphRAG 四种页面模式；
-- 文件上传、文档多选、真实删除、聊天历史、引用、检索方式、错误与执行轨迹展示；
-- OpenAI-compatible Chat Completions 单一适配器；未配置 LLM 时使用规则分类、真实检索、
-  保守抽取式生成和引用校验，不会静默切换到 Mock；
-- 单元、契约、LangGraph 集成和真实本地容器测试。
+模块化智能文档问答平台：把 TXT、Markdown、PDF、DOCX 入库到 File/MySQL、Chroma、BM25 和
+NetworkX Graph，并通过 Naive、Advanced、GraphRAG 或 LangGraph Agent 返回有依据、有引用、
+可查看 execution trace 的回答。
 
-## 架构
+目标用户是课程评审者、知识查询用户和演示知识库维护者。项目用于单机/课程演示规模的策略比较与
+工程实践，不是生产级多租户知识平台。当前代码是用于创建 `v1.0.0` 的最终交付版本；tag 将在
+本次提交依次合入 develop、main 并完成远程质量门禁后，由维护者在 main 稳定提交上创建。
+
+## 功能概览
+
+- 文档加载、清洗、父子分块，File/MySQL 文档与 chunk 持久化；
+- Chroma Dense、BM25、Hybrid/RRF、Multi-Query 边界、重排、父块回溯和上下文压缩；
+- 规则实体关系抽取、NetworkX 持久化、1–2 跳 GraphRAG；
+- LangGraph Workflow/Branch/Loop 与 Agent/Naive/Advanced/Graph 手动模式；
+- PASS、REGENERATE、REWRITE_RETRIEVE、CLARIFY、REFUSE；
+- Query Rewrite 语义守恒、回答评估、无答案拒答、引用映射和 execution trace；
+- LLM transport retry、异常回答拦截、确定性 Grounded Fallback；
+- 文档删除同步 Repository、Chroma、BM25、Graph，支持重启持久化；
+- Streamlit 上传、选择、删除、聊天、引用与执行决策展示。
+
+## v1.0.0 最终状态
+
+本版本已完成课程范围内的文档处理、存储、四类 RAG、Agent 编排、答案评估、失败恢复、引用、
+删除同步、Streamlit UI、分层/依赖注入、CI 和工程文档闭环。上一正式工程里程碑是 `v0.7.0`；
+从该里程碑到最终版本主要完成了 evaluation decision 分流、Query Rewrite 守恒、transport retry、
+Grounded Fallback、人工验收回归和最终工程规范审计。正式发布说明见
+[v1.0.0 release notes](docs/releases/v1.0.0.md)。
+
+## 架构概览
 
 ```text
-Streamlit
-→ Service Container
-→ LangGraph Agent
-→ Retriever Router
-   ├─ Naive: Dense → Parent Context
-   ├─ Advanced: Dense + BM25 → RRF → Multi-Query → Reranker → Parent → Compression
-   └─ Graph: Entity/Relation Extraction → NetworkX GraphRetriever
-→ Grounded Generator
-→ Conservative Evaluator
-→ Rewrite Loop (max_retries=2)
+Streamlit UI → ApplicationServices
+                    ├─ Coordinated Ingestion → Repository + Chroma + BM25 + Graph
+                    └─ LangGraph Agent
+                         → Retriever → Generator → Evaluator
+                         → pass / regenerate / rewrite-retrieve / clarify / refuse
 ```
 
-根目录 `app.py` 是唯一 Streamlit 入口，长生命周期对象统一由
-`rag_agent_platform.bootstrap.build_application_services()` 创建，并通过 `st.cache_resource`
-跨 rerun 复用。
+`src/rag_agent_platform/bootstrap.py` 是唯一生产 Composition Root。UI 不直接访问数据库；Agent
+节点不创建模型、Retriever 或存储；高层服务通过构造函数依赖抽象。详细规则见
+[architecture.md](docs/architecture.md) 和 [interfaces.md](docs/interfaces.md)。
 
-## 分层与依赖注入
+## 环境准备
 
-`models` 提供稳定数据契约；`ingestion`、`retrieval`、`graph`、`generation`、`evaluation`
-实现领域能力；`agent` 只编排这些接口；`ui` 只调用应用服务。具体 Repository、Chroma、图服务、
-Retriever、Generator、Evaluator 和 Agent 只在 `bootstrap.py` 中装配。业务服务采用构造函数注入，
-测试可使用 Fake/Mock 替换外部依赖。UI 不直接操作数据库或向量库，Agent 节点不创建连接或模型。
-详细依赖规则见 `docs/architecture.md` 与 `docs/engineering-practice.md`。
-
-## 环境配置
-
-需要 Python 3.12+ 与 [uv](https://docs.astral.sh/uv/)。
+需要 Python 3.12+ 和 [uv](https://docs.astral.sh/uv/)。PowerShell：
 
 ```powershell
-uv sync
+uv sync --frozen
 Copy-Item .env.example .env
+uv run python scripts/check_environment.py
 ```
 
-默认 `APP_MODE=real`。本地模式无需 API Key，会使用 Hash Embedding 和保守抽取式回答。若需模型
-分类、生成、评估和重写，可配置：
+环境脚本只显示 credential `configured/missing`，不打印密钥。不要提交 `.env`、上传文档、运行
+数据库、Chroma/Graph 数据或日志。
+
+### real、test/hash 与 mock
+
+- `APP_MODE=real`（默认）：真实入库、持久化、Retriever、Graph 和 Agent；模型 provider 可选。
+- `EMBEDDING_PROVIDER=hash`：外部服务零依赖的确定性测试/本地模式，不等价于生产语义模型。
+- LLM provider 留空：不切换 Mock，仍运行真实检索，并用规则路由/评估和 grounded fallback。
+- `APP_MODE=mock`：只在显式测试或 UI 开发时使用，页面会显示警告；真实服务失败不会静默降级。
+
+外部 OpenAI-compatible 示例（值只写入本地 `.env`）：
 
 ```dotenv
 LLM_PROVIDER=openai-compatible
@@ -69,67 +77,75 @@ LLM_API_KEY=your-key
 LLM_BASE_URL=https://your-endpoint.example/v1
 ```
 
-不要提交 `.env`、真实密钥、上传文档、Chroma 数据、图数据或日志。`EMBEDDING_PROVIDER` 当前仅
-支持空值、`local` 或 `hash`；其他值会在启动时给出明确错误。所有可用配置见 `.env.example`。
+Embedding 同样支持 `openai-compatible`，对应字段见 `.env.example`。外部模型临时网络/429/5xx 会
+有限重试；401/403 等配置错误不重试。
 
-## 启动
+## MySQL 初始化
+
+`.env.example` 以 MySQL 为真实本地示例。先创建专用数据库/账号，再配置 `MYSQL_*`；Repository
+首次连接会创建所需表。初始化参考：
+
+```powershell
+mysql -u root -p < scripts/init_mysql.sql
+uv run pytest tests/test_mysql_repository.py -v -s
+```
+
+不需要 MySQL 时设置 `DOCUMENT_REPOSITORY_PROVIDER=file`，元数据写入 `METADATA_PATH`。
+
+## 启动与使用
 
 ```powershell
 uv run streamlit run app.py
 ```
 
-默认地址为 `http://localhost:8501`。侧边栏支持 `.txt`、`.md`、`.pdf`、`.docx`，上传成功后会
-自动选择该文档。未选择文档表示空检索范围，不会跨范围生成答案。
+默认 Local URL 通常是 `http://localhost:8501`。侧边栏上传并选择文档，然后选择：
 
-页面提供四种模式：
+- Agent 自动：SIMPLE→Naive、COMPLEX→Advanced、RELATION→Graph、CHAT→None；
+- Naive：Dense + parent context；
+- Advanced：Dense + BM25 + fusion + reranking + parent/compression；
+- GraphRAG：实体关系证据。
 
-- Agent 自动模式：SIMPLE → Naive、COMPLEX → Advanced、RELATION → Graph、CHAT → NONE；
-- Naive RAG：强制 Dense + 父块回溯；
-- Advanced RAG：强制混合召回、RRF、重排、父块回溯和压缩；
-- GraphRAG：强制图检索。
+可用 `tests/fixtures/enterprise_procurement_policy.txt` 做演示。演示步骤见
+[demo-script.md](docs/demo-script.md)。
 
-只有显式设置 `APP_MODE=mock` 才会启用 Mock 入库与 Mock Agent，页面会明显警告。
-
-## 测试与质量检查
+## 测试和质量门禁
 
 ```powershell
-uv run python -c "import rag_agent_platform; print(rag_agent_platform.__file__)"
-uv run python -m compileall src tests app.py
+uv run python -m compileall src tests scripts app.py
 uv run ruff format --check .
 uv run ruff check .
 uv run pytest -q
+uv run pytest tests/test_real_container_integration.py -v -s
+uv run pytest -q -k "streamlit or app"
+uv run pytest --cov=src/rag_agent_platform --cov-report=term-missing
 ```
 
-检索离线评估格式与指标见 `docs/retrieval-evaluation.md`。
+2026-07-22 `v1.0.0` release candidate 最终本地复验为全量 379 passed、语句覆盖率 88%、MySQL
+Repository 6 passed、ApplicationServices 5 passed、Streamlit AppTest 1 passed。完整命令与限制见
+[acceptance-report.md](docs/acceptance-report.md)。
 
-GitHub Actions 会在向 `main`、`develop` push 或提交 Pull Request 时使用 Python 3.12 和
-`uv sync --frozen` 运行同一组检查。默认 CI 使用 Fake/本地组件，不要求真实 LLM API、MySQL 或
-用户文档。
+GitHub Actions 在 push/PR 到 `main`、`develop` 时运行外部模型零依赖的全量质量 job，并在临时
+MySQL 8.4 service 中运行 Repository 合同 job。详见 [testing-strategy.md](docs/testing-strategy.md)。
 
-## MVP、分支与发布
+## 常见错误
 
-项目按工程骨架、Naive、Advanced、GraphRAG、Agentic RAG 和 Release 1.0 逐步演进；真实状态与
-验收条件见 `docs/mvp-plan.md`。开发遵循 `feature/* → develop → main`，每一级合并前必须通过 CI。
-版本采用 `MAJOR.MINOR.PATCH`；tag 只能由组长在与版本号一致、已经验证的稳定提交上创建，不能
-移动已有 tag。未发布变更记录在 `CHANGELOG.md`，发布说明使用 `docs/release-template.md`。
+- `APP_MODE must be either real or mock`：检查 `.env` 中模式拼写。
+- LLM/Embedding 缺少 model/key：补齐同一 provider 的字段，环境脚本不会显示具体 key。
+- MySQL connection refused：确认服务、host/port、数据库和账号；可临时使用 File provider。
+- Chroma/Graph 路径不可写：停止应用，修正目录权限后重启；不要在运行时手工删部分索引。
+- `uv sync --frozen` 提示 lock 不一致：开发者先审阅依赖变更并执行 `uv lock`；CI 不自动改 lock。
+- 外部模型偶发断连：查看 execution trace 的 transport retry/fallback；持续 401 通常是配置问题。
 
-## 项目边界
+## 需求、边界和项目演进
 
-当前不提供多用户认证与复杂权限、云端分布式部署、Redis/大规模向量数据库集群、Embedding
-微调、完整微软 GraphRAG、复杂 OCR、跨页表格重建、生产监控告警、高可用或灾备。可验证需求、
-非功能约束和完整排除项见 `docs/requirements.md`。
+- [需求与范围](docs/requirements.md)：FR/NFR、角色、场景、验收和非目标；
+- [需求追踪矩阵](docs/traceability.md)：需求—模块—接口—测试；
+- [MVP 与真实 tag 演进](docs/mvp-plan.md)；
+- [开发步骤](docs/development-plan.md) 与 [工程实践](docs/engineering-practice.md)；
+- [部署](docs/deployment.md)、[发布流程](docs/release-process.md)、
+  [最终验收](docs/acceptance-report.md)、[v1.0.0 发布说明](docs/releases/v1.0.0.md)。
 
-## 当前限制
+当前明确不支持：生产级高并发/高可用集群、多租户与 RBAC、分布式向量库、模型训练/微调、商业
+图谱编辑平台、复杂 OCR/跨页表格、生产监控告警和自动备份灾备。完整边界以 requirements 为准。
 
-- Hash Embedding 适合本地闭环和测试，不等价于生产语义 Embedding；
-- 图实体关系抽取目前是确定性规则实现，不是 LLM/NER 生产抽取器；
-- 未配置 LLM 时回答是带真实引用的抽取式证据汇总，综合表达能力有限；
-- Advanced 的 Multi-Query 默认使用 Identity Transformer，尚未装配模型查询扩展或
-  Cross-Encoder Reranker；
-- 文档元数据当前使用 JSON 文件，不是 `.env.example` 中预留的 MySQL；
-- PDF 页数会记录在文档元数据，但当前固定长度块切分尚未保留逐页边界，因此 PDF/DOCX 块的
-  `page` 可能为空；
-- 尚未进行生产级并发、权限、超大文件、远程 Provider、阈值校准与端到端浏览器自动化验证。
-
-分支约定见 `CONTRIBUTING.md`，模块边界见 `docs/interfaces.md`，当前完成情况见
-`docs/development-plan.md`。
+协作约定见 [CONTRIBUTING.md](CONTRIBUTING.md)，正式版本历史见 [CHANGELOG.md](CHANGELOG.md)。

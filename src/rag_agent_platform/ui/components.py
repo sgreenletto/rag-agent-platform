@@ -91,6 +91,9 @@ def render_agent_result(result: AgentResult) -> None:
         st.write(f"query_type：`{result.query_type.value}`")
         st.write(f"strategy：`{result.strategy.value}`")
         st.write(f"retry_count：`{result.retry_count}`")
+        st.write(f"regenerate_count：`{result.regenerate_count}`")
+        st.write(f"evaluation_decision：`{result.evaluation_decision or 'none'}`")
+        st.write(f"refused：`{result.refused}`")
         methods = sorted({chunk.retrieval_method for chunk in result.retrieved_chunks})
         st.write(f"retrieval_method：`{', '.join(methods) if methods else 'none'}`")
         for step in result.execution_trace:

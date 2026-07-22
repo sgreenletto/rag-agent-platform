@@ -1,52 +1,35 @@
-# 四人开发计划与完成情况
+# 开发步骤与最终状态
 
-## 当前共同基线
+## 开发方法
 
-公共 `DocumentRecord`、`RetrievedChunk`、`Citation`、`AgentResult` 和抽象服务接口继续作为全组
-唯一契约。真实服务已在 `feature/agent-ui` 完成联合装配，Mock 仅保留给测试和显式 demo 模式。
+```text
+需求分析 → 边界确认 → 分层设计 → 接口抽象 → 依赖注入
+→ TDD/回归测试 → CI → MVP 演进 → develop/main 发布 → v1.0.0
+```
 
-## 成员一：文档入库与存储（已完成当前阶段）
+每项需求先定义输入、输出、失败语义和可执行验收；新增行为先以失败测试或回归测试固定，再完成
+最小实现和重构。高层依赖抽象，具体 provider 只在 Composition Root 选择。
 
-- TXT、Markdown、PDF、DOCX 解析与清洗；
-- 父子切块及 document/chunk/parent/source/page 元数据；
-- FileDocumentRepository 和 ChromaVectorStore；
-- 文档级 Repository/Vector 删除与测试。
+## 最终已完成能力
 
-仍待生产化：MySQL Repository、逐页切块映射、并发写入和大文件策略。
+- 文档：TXT/Markdown/PDF/DOCX、清洗、父子分块；
+- 存储：File/MySQL Repository、Chroma、BM25 corpus、NetworkX Graph；
+- 检索：Naive、Advanced、Graph 及统一分数、过滤、去重、引用；
+- Agent：自动路由、Workflow、Branch、Loop、五类 evaluation decision、Query Rewrite；
+- 稳定性：transport retry、Grounded Fallback、异常回答拦截、无答案拒答；
+- 数据一致性：Repository/Chroma/BM25/Graph 删除同步和重启恢复；
+- 应用：Composition Root、依赖注入、Streamlit、CI、需求追踪、部署和验收文档。
 
-## 成员二：Naive 与 Advanced RAG（已完成当前阶段）
+实现与测试的逐项映射见 [traceability.md](traceability.md)。上述“完成”限于 requirements 中定义的
+课程范围，不等于生产级高可用、多租户或商业知识图谱平台。
 
-- Dense Retriever、BM25、RRF、Hybrid；
-- Multi-Query、Reranker、Compression、Threshold；
-- 统一归一化、过滤、排序、去重和离线评估；
-- 本轮由适配器命名为 Naive/Advanced，并接入父块回溯。
+## v1.0.0 交付步骤
 
-仍待生产化：真实语义 Embedding、LLM Query Transformer、Cross-Encoder Reranker 和阈值校准。
+当前工作区是 `1.0.0` release candidate。本次本地门禁通过后，由维护者审阅并提交当前 feature，
+依次通过 PR 合入 develop、main；远程 GitHub Actions 在 PR 阶段验证。最后在 main 已提交的稳定
+commit 上创建不可移动的 `v1.0.0` tag 和 Release Notes。本轮不执行这些 Git 写操作。
 
-## 成员三：GraphRAG（已完成当前阶段）
+## 交付后的可选增强
 
-- 规则实体关系抽取、NetworkX 图存储；
-- 构建、检索、持久化和文档删除；
-- GraphRetriever 统一输出与 document_ids 过滤；
-- 本轮兼容成员一 `:child:` 块 ID 的文档过滤约定。
-
-仍待生产化：LLM/NER 抽取、图索引重载元数据恢复、复杂实体消歧和大图存储。
-
-## 成员四：Agent、生成与界面（本轮已完成）
-
-- `LangGraphAgentService` 与完整 `AgentState`；
-- 结构化优先、规则兜底的问题分析与手动模式固定路由；
-- CHAT/NAIVE/ADVANCED/GRAPH 条件分支；
-- Grounded Generator、Conservative Evaluator、查询重写和 `max_retries=2` 有界循环；
-- 统一 ServiceContainer、真实 Streamlit 入库/删除/选择/问答/引用/轨迹；
-- 显式 `APP_MODE=mock`；
-- Agent 单元、异常、循环、Fake 集成、真实本地容器和 UI 导入测试；
-- README、接口、架构、协作说明和环境示例收尾。
-
-## 后续迭代
-
-1. 选择并评估生产 Embedding/LLM/Reranker Provider；
-2. 增加逐页块映射、MySQL/远程对象存储和权限模型；
-3. 用真实问题集校准各模式阈值与重试策略；
-4. 增加浏览器级 Streamlit E2E、负载与故障注入测试；
-5. 在 `develop` 集成验证后再准备稳定演示版本。
+真实评估集阈值校准、页级/表格定位、浏览器级 E2E、并发性能、认证授权、生产监控和备份灾备是
+后续可选增强，不是本版本未完成的课程需求。

@@ -38,7 +38,10 @@ def test_chunk_corpus_is_a_storage_agnostic_runtime_contract() -> None:
     assert corpus.list_chunks(["doc-1"])[0].chunk_id == "chunk-1"
 
 
-@pytest.mark.parametrize(("scores", "expected"), [([], []), ([2.0], [1.0]), ([0.0], [1.0])])
+@pytest.mark.parametrize(
+    ("scores", "expected"),
+    [([], []), ([2.0], [2.0 / 3.0]), ([0.0], [0.0]), ([0.3], [0.3])],
+)
 def test_min_max_normalize_edge_cases(scores: list[float], expected: list[float]) -> None:
     assert min_max_normalize(scores) == expected
 
@@ -76,6 +79,45 @@ def test_finalize_results_deduplicates_by_chunk_id_using_highest_score() -> None
 
     assert len(results) == 1
     assert results[0].normalized_score == 0.9
+
+
+def test_finalize_results_deduplicates_parent_content_but_keeps_distinct_evidence() -> None:
+    duplicate_parent_a = RetrievedChunk(
+        chunk_id="child-a",
+        content="重要采购需要部门负责人、财务部门和分管副总经理依次审批。",
+        normalized_score=0.9,
+        source="policy.txt",
+        document_id="doc",
+        parent_id="parent",
+        retrieval_method="advanced+parent",
+        metadata={"parent_context_chunk_id": "parent"},
+    )
+    duplicate_parent_b = RetrievedChunk(
+        chunk_id="child-b",
+        content="重要采购需要部门负责人、财务部门和分管副总经理依次审批。",
+        normalized_score=0.8,
+        source="policy.txt",
+        document_id="doc",
+        parent_id="parent",
+        retrieval_method="advanced+parent",
+        metadata={"parent_context_chunk_id": "parent"},
+    )
+    distinct_same_document = RetrievedChunk(
+        chunk_id="child-c",
+        content="数据库软件采购必须先经过信息安全部门审核。",
+        normalized_score=0.7,
+        source="policy.txt",
+        document_id="doc",
+        parent_id="other-parent",
+        retrieval_method="advanced+parent",
+        metadata={"parent_context_chunk_id": "other-parent"},
+    )
+
+    results = finalize_results(
+        [duplicate_parent_b, distinct_same_document, duplicate_parent_a], None, 5
+    )
+
+    assert [item.chunk_id for item in results] == ["child-a", "child-c"]
 
 
 def test_validate_retrieval_request_returns_stripped_query() -> None:

@@ -23,6 +23,7 @@ def retrieve_chunks(
         )
         if any(not isinstance(chunk, RetrievedChunk) for chunk in raw_chunks):
             raise TypeError(f"{name} must return list[RetrievedChunk]")
+        raw_count = len(raw_chunks)
         chunks = finalize_results(raw_chunks, state["document_ids"], top_k)
     except Exception as exc:
         error = f"{name} 检索失败：{type(exc).__name__}: {exc}"
@@ -31,13 +32,13 @@ def retrieve_chunks(
             "retrieved_chunks": [],
             "retrieval_sufficient": False,
             "error": error,
-            "retry_count": state["max_retries"],
             "execution_trace": trace,
         }
-    sufficient = bool(chunks) and chunks[0].normalized_score > 0.0
+    sufficient = bool(chunks)
     highest = chunks[0].normalized_score if chunks else 0.0
     trace.append(
-        f"retrieve: retriever={name}, results={len(chunks)}, top_score={highest:.4f}, "
+        f"retrieve: retriever={name}, raw_results={raw_count}, results={len(chunks)}, "
+        f"deduplicated={raw_count - len(chunks)}, top_score={highest:.4f}, "
         f"document_filter={'yes' if state['document_ids'] is not None else 'no'}"
     )
     return {

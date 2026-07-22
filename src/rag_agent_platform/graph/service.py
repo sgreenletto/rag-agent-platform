@@ -184,6 +184,9 @@ class NetworkXGraphService(GraphService):
                     metadata={
                         "query_entities": entities,
                         "graph_score": round(score, 4),
+                        "graph_relations": self._store.relations_for_chunks(
+                            {chunk_id}, entities=entities
+                        ),
                     },
                 )
                 results.append(chunk)

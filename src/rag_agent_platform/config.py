@@ -32,6 +32,7 @@ class Settings(BaseSettings):
     rerank_top_k: int = 5
     retrieval_score_threshold: float = 0.0
     agent_max_retries: int = 2
+    agent_max_regenerations: int = 1
     hash_embedding_dimensions: int = 32
 
     mysql_host: str = "127.0.0.1"

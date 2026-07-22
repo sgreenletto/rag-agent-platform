@@ -9,7 +9,7 @@ from rag_agent_platform.config import Settings, settings
 from rag_agent_platform.embeddings import build_embedding_model
 from rag_agent_platform.evaluation import GroundedAnswerEvaluator
 from rag_agent_platform.evaluation.base import AnswerEvaluator
-from rag_agent_platform.generation import GroundedAnswerGenerator
+from rag_agent_platform.generation import GroundedAnswerGenerator, GroundedFallbackSynthesizer
 from rag_agent_platform.generation.base import AnswerGenerator
 from rag_agent_platform.graph import GraphRetriever, MockTripletExtractor, NetworkXGraphService
 from rag_agent_platform.ingestion import (
@@ -127,7 +127,11 @@ def _build_real_container(config: Settings) -> ApplicationServices:
         graph_service=graph_service,
     )
     chat_model = build_chat_model(config)
-    generator = GroundedAnswerGenerator(chat_model)
+    fallback_synthesizer = GroundedFallbackSynthesizer()
+    generator = GroundedAnswerGenerator(
+        chat_model,
+        fallback_synthesizer=fallback_synthesizer,
+    )
     evaluator = GroundedAnswerEvaluator(chat_model)
     agent = LangGraphAgentService(
         naive_retriever=naive,
@@ -139,6 +143,8 @@ def _build_real_container(config: Settings) -> ApplicationServices:
         rewriter=BoundedQueryRewriter(chat_model),
         top_k=config.retrieval_top_k,
         max_retries=config.agent_max_retries,
+        max_regenerations=config.agent_max_regenerations,
+        fallback_synthesizer=fallback_synthesizer,
     )
     return ApplicationServices(
         settings=config,

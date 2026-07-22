@@ -4,7 +4,8 @@ from typing import get_type_hints
 from rag_agent_platform.agent.base import AgentService
 from rag_agent_platform.config import Settings
 from rag_agent_platform.evaluation.base import AnswerEvaluator
-from rag_agent_platform.generation.base import AnswerGenerator
+from rag_agent_platform.generation import GroundedFallbackSynthesizer
+from rag_agent_platform.generation.base import AnswerGenerator, FallbackSynthesizer
 from rag_agent_platform.ingestion.base import IngestionPipeline
 from rag_agent_platform.ingestion.pipeline import RealIngestionPipeline
 from rag_agent_platform.retrieval.base import BaseRetriever
@@ -38,3 +39,7 @@ def test_streamlit_build_services_returns_application_services() -> None:
     from rag_agent_platform.ui.app import build_services
 
     assert get_type_hints(build_services)["return"] is ApplicationServices
+
+
+def test_grounded_fallback_satisfies_injected_protocol() -> None:
+    assert isinstance(GroundedFallbackSynthesizer(), FallbackSynthesizer)

@@ -1,6 +1,10 @@
 """Answer evaluation contract exports."""
 
-from rag_agent_platform.evaluation.base import AnswerEvaluator, EvaluationResult
+from rag_agent_platform.evaluation.base import (
+    AnswerEvaluator,
+    EvaluationDecision,
+    EvaluationResult,
+)
 from rag_agent_platform.evaluation.retrieval_dataset import (
     RetrievalEvaluationCase,
     load_retrieval_dataset,
@@ -19,6 +23,7 @@ from rag_agent_platform.evaluation.service import GroundedAnswerEvaluator
 
 __all__ = [
     "AnswerEvaluator",
+    "EvaluationDecision",
     "EvaluationResult",
     "GroundedAnswerEvaluator",
     "RankingMetrics",

@@ -29,7 +29,7 @@
 ## 合并前检查
 
 ```powershell
-uv run python -m compileall src tests app.py
+uv run python -m compileall src tests scripts app.py
 uv run ruff format --check .
 uv run ruff check .
 uv run pytest -q
@@ -38,9 +38,10 @@ uv run pytest -q
 本地检查和 GitHub Actions CI 必须全部通过；不得用跳过、忽略退出码或伪造外部服务结果使 CI
 静默成功。依赖真实外部服务的测试必须显式标记，并与默认离线测试隔离。
 
-还需手动启动：
+还需运行 Streamlit AppTest；发布验收时再手动启动：
 
 ```powershell
+uv run pytest -q -k "streamlit or app"
 uv run streamlit run app.py
 ```
 
